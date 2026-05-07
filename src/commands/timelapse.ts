@@ -131,7 +131,7 @@ ${content}
 `;
 
 			const model = KARU_AI.getGenerativeModel({
-				model: "gemini-1.5-flash",
+				model: "gemini-2.5-flash",
 				generationConfig: {
 					temperature: 0.2,
 					maxOutputTokens: 800,
