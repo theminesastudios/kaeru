@@ -60,7 +60,7 @@ const messageTranslate: InteractionCommand = {
 			const targetLang = langMap[fullLocale.toLowerCase()] || langMap[rawLang] || "english";
 
 			const model = KARU_AI.getGenerativeModel({
-				model: "gemma-3n-e4b-it",
+				model: "gemini-1.5-flash",
 				generationConfig: {
 					temperature: 0.3,
 					maxOutputTokens: 1200,
