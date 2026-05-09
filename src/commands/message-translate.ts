@@ -6,13 +6,20 @@ import {
 	MessageCommandBuilder,
 	TextDisplayBuilder,
 } from "@minesa-org/mini-interaction";
+
 import type {
 	InteractionCommand,
 	MessageContextMenuInteraction,
 } from "@minesa-org/mini-interaction";
 
 import { KARU_AI } from "../config/ai.ts";
-import { getEmoji, langMap, log, sendAlertMessage } from "../utils/index.ts";
+
+import {
+	getEmoji,
+	langMap,
+	log,
+	sendAlertMessage,
+} from "../utils/index.ts";
 
 function splitMessageBy2000(str: string) {
 	const chunks: string[] = [];
@@ -26,7 +33,7 @@ function splitMessageBy2000(str: string) {
 
 const messageTranslate: InteractionCommand = {
 	data: new MessageCommandBuilder()
-		.setName("Message Translate")
+		.setName("message-translate")
 		.setNameLocalizations({
 			it: "Traduci Messaggio",
 			tr: "Mesajı Çevir",
@@ -35,13 +42,19 @@ const messageTranslate: InteractionCommand = {
 			"zh-CN": "翻译消息",
 			"pt-BR": "Traduzir Messaggio",
 		})
-		.setContexts([CommandContext.Guild, CommandContext.Bot, CommandContext.DM])
+		.setContexts([
+			CommandContext.Guild,
+			CommandContext.Bot,
+			CommandContext.DM,
+		])
 		.setIntegrationTypes([
 			IntegrationType.GuildInstall,
 			IntegrationType.UserInstall,
 		]),
 
-	handler: async (interaction: MessageContextMenuInteraction) => {
+	handler: async (
+		interaction: MessageContextMenuInteraction,
+	) => {
 		await interaction.deferReply({
 			flags: [
 				InteractionFlags.IsComponentsV2,
@@ -54,7 +67,7 @@ const messageTranslate: InteractionCommand = {
 		if (
 			!message ||
 			typeof message.content !== "string" ||
-			message.content.trim() === ""
+			!message.content.trim()
 		) {
 			return sendAlertMessage({
 				interaction,
@@ -79,73 +92,92 @@ const messageTranslate: InteractionCommand = {
 				});
 			}
 
-			const fullLocale = interaction.locale || "en-US";
+			const fullLocale =
+				interaction.locale || "en-US";
+
 			const intl = new Intl.Locale(fullLocale);
 
-			const rawLang = intl.language.toLowerCase();
+			const rawLang =
+				intl.language.toLowerCase();
 
 			const targetLang =
 				langMap[fullLocale.toLowerCase()] ||
 				langMap[rawLang] ||
 				"english";
 
-			const model = KARU_AI.getGenerativeModel({
-				model: "gemma-4-26b-a4b-it",
-				generationConfig: {
-					temperature: 0.2,
-					maxOutputTokens: 400,
-					topP: 0.8,
-					topK: 20,
-				},
-			});
+			const model =
+				KARU_AI.getGenerativeModel({
+					model: "gemma-4-26b-a4b-it",
+
+					generationConfig: {
+						temperature: 0.1,
+						maxOutputTokens: 250,
+						topP: 0.8,
+						topK: 20,
+						responseMimeType:
+							"application/json",
+					},
+				});
 
 			const prompt = `
-Detect the language of this message and translate it into ${targetLang}.
+Translate the following message into ${targetLang}.
 
-Rules:
-- Preserve tone and meaning
-- Keep formatting and paragraphs if possible
-- Do not explain anything
-- Do not add extra commentary
-- Output EXACTLY in this format:
+Return ONLY valid JSON.
 
-Language: <detected language>
-Translation:
-<translated text>
+Schema:
+{
+  "language": "detected language",
+  "translation": "translated text"
+}
 
 Message:
 ${safeMessage}
 `.trim();
 
-			const result = await model.generateContent(prompt);
+			const result =
+				await model.generateContent(prompt);
 
-			const raw = result.response.text().trim();
+			const raw =
+				result.response.text().trim();
 
-			const langMatch = raw.match(/Language:\s*(.+)/i);
+			let parsed: {
+				language?: string;
+				translation?: string;
+			};
 
-			const translationMatch = raw.match(
-				/Translation:\s*([\s\S]*)/i,
-			);
+			try {
+				parsed = JSON.parse(raw);
+			} catch {
+				throw new Error(
+					"Invalid JSON response from AI",
+				);
+			}
 
 			const detectedLang =
-				langMatch?.[1]?.trim() || "Unknown";
+				parsed.language?.trim() ||
+				"Unknown";
 
 			const translated =
-				translationMatch?.[1]?.trim();
+				parsed.translation?.trim();
 
 			if (!translated) {
-				throw new Error("Malformed response from AI");
+				throw new Error(
+					"Missing translation output",
+				);
 			}
 
 			const finalOutput =
 				`${getEmoji("globe")} Translated from ${detectedLang}\n\n${translated}`;
 
-			const chunks = splitMessageBy2000(finalOutput);
+			const chunks =
+				splitMessageBy2000(finalOutput);
 
 			await interaction.editReply({
 				components: [
 					new ContainerBuilder().addComponent(
-						new TextDisplayBuilder().setContent(chunks[0]),
+						new TextDisplayBuilder().setContent(
+							chunks[0],
+						),
 					),
 				],
 			});
@@ -154,9 +186,12 @@ ${safeMessage}
 				await interaction.followUp({
 					components: [
 						new ContainerBuilder().addComponent(
-							new TextDisplayBuilder().setContent(chunks[i]),
+							new TextDisplayBuilder().setContent(
+								chunks[i],
+							),
 						),
 					],
+
 					flags: [
 						InteractionFlags.IsComponentsV2,
 						InteractionFlags.Ephemeral,
@@ -164,12 +199,18 @@ ${safeMessage}
 				});
 			}
 		} catch (err) {
-			log("error", "Failed to translate message:", err);
+			log(
+				"error",
+				"Failed to translate message:",
+				err,
+			);
 
 			return sendAlertMessage({
 				interaction,
+
 				content:
 					"Failed to translate the message. Please try again shortly.",
+
 				type: "error",
 			});
 		}
