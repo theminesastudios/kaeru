@@ -106,7 +106,7 @@ Key Points:
 `.trim();
 
 			const model = KARU_AI.getGenerativeModel({
-				model: "gemini-2.5-flash",
+				model: "gemma-4-26b-a4b-it",
 				generationConfig: {
 					temperature: 0.3,
 					maxOutputTokens: 1024,

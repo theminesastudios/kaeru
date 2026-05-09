@@ -49,7 +49,7 @@ export default mini.discordOAuthCallback({
 									{
 										type: 10,
 										content:
-											"## Authorize complete\nYou can now open a support ticket with `/create`.\n\nAfter your ticket is created, you can continue the conversation from DMs with `/send`.",
+											"## Authorize complete\nYou can now open a support ticket with </create:1477209072800632845>.\n\nAfter your ticket is created, you can continue the conversation from DMs with </send:1477601535692247294>.",
 									},
 									{
 										type: 10,

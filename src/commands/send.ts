@@ -18,6 +18,16 @@ import type {
 import { db } from "../utils/database.ts";
 import { getEmoji, getOrCreateWebhookUrl, sendAlertMessage } from "../utils/index.ts";
 
+function buildSentMessageContainer(content: string, footer: string) {
+	return new ContainerBuilder()
+		.addComponent(
+			new TextDisplayBuilder().setContent(`>>> ${content}`),
+		)
+		.addComponent(
+			new TextDisplayBuilder().setContent(footer),
+		);
+}
+
 const sendCommand: InteractionCommand = {
 	data: new CommandBuilder()
 		.setName("send")
@@ -109,7 +119,7 @@ const sendCommand: InteractionCommand = {
 				if (!userTicketData || !userTicketData.activeTicketId) {
 					return sendAlertMessage({
 						interaction,
-						content: `**You don't have an active ticket.**\n\nIf you need assistance, please use \`/create\` in a mutual server first.\n\n-# If you are staff, please use this command inside a ticket thread.`,
+						content: `**You don't have an active ticket.**\n\nIf you need assistance, please use </create:1477209072800632845> in a mutual server first.\n\n-# If you are staff, please use this command inside a ticket thread.`,
 						type: "error",
 					});
 				}
@@ -128,6 +138,7 @@ const sendCommand: InteractionCommand = {
 				let webhookUrl = guildData?.webhookUrl;
 
 				let webhookWorked = false;
+				const dmToTicketFooter = `-# Message sent to ticket ${getEmoji("reply")}`;
 
 				const sendWebhookMessage = async (url: string) => {
 					return await fetch(`${url}?thread_id=${ticketData.threadId}`, {
@@ -163,16 +174,7 @@ const sendCommand: InteractionCommand = {
 							webhookWorked = true;
 							return interaction.editReply({
 								components: [
-									new ContainerBuilder()
-										.addComponent(new TextDisplayBuilder().setContent(`>>> ${content}`))
-										.toJSON(),
-									new ContainerBuilder()
-										.addComponent(
-											new TextDisplayBuilder().setContent(
-												"-# Message sent to ticket.",
-											),
-										)
-										.toJSON(),
+									buildSentMessageContainer(content, dmToTicketFooter).toJSON(),
 								],
 							});
 						}
@@ -194,16 +196,7 @@ const sendCommand: InteractionCommand = {
 									webhookWorked = true;
 									return interaction.editReply({
 										components: [
-											new ContainerBuilder()
-												.addComponent(new TextDisplayBuilder().setContent(`>>> ${content}`))
-												.toJSON(),
-											new ContainerBuilder()
-												.addComponent(
-													new TextDisplayBuilder().setContent(
-														"-# Message sent to ticket.",
-													),
-												)
-												.toJSON(),
+											buildSentMessageContainer(content, dmToTicketFooter).toJSON(),
 										],
 									});
 								}
@@ -235,7 +228,7 @@ const sendCommand: InteractionCommand = {
 										components: [
 											{
 												type: 10,
-												content: `-# Sent from DMs ${getEmoji("reply")}`,
+												content: dmToTicketFooter,
 											},
 										],
 									},
@@ -249,15 +242,7 @@ const sendCommand: InteractionCommand = {
 					}
 				}
 
-				const container = new ContainerBuilder()
-					.addComponent(
-						new TextDisplayBuilder().setContent(`>>> ${content}`),
-					)
-					.addComponent(
-						new TextDisplayBuilder().setContent(
-							"-# Message sent to ticket.",
-						),
-					);
+				const container = buildSentMessageContainer(content, dmToTicketFooter);
 
 				return interaction.editReply({
 					components: [container],
@@ -344,15 +329,10 @@ const sendCommand: InteractionCommand = {
 						throw new Error(`Failed to send message: ${messageResponse.status}`);
 					}
 
-					const container = new ContainerBuilder()
-						.addComponent(
-							new TextDisplayBuilder().setContent(`>>> ${content}`),
-						)
-						.addComponent(
-							new TextDisplayBuilder().setContent(
-								"-# Response sent to user via DM.",
-							),
-						);
+					const container = buildSentMessageContainer(
+						content,
+						"-# Response sent to user via DM.",
+					);
 
 					return interaction.editReply({
 						components: [container],

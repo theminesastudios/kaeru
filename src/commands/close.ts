@@ -152,7 +152,7 @@ const closeCommand: InteractionCommand = {
 				}
 
 				return interaction.editReply({
-					content: `## ${getEmoji("ticket.archive.user")} **Your ticket has been closed!**\n\nIf you need further assistance, you can create a new ticket anytime using \`/create\` command.`,
+					content: `## ${getEmoji("ticket.archive.user")} **Your ticket has been closed!**\n\nIf you need further assistance, you can create a new ticket anytime using </create:1477209072800632845>.`,
 				});
 			} catch (error) {
 				console.error("Error closing ticket in DM:", error);
@@ -258,7 +258,7 @@ const closeCommand: InteractionCommand = {
 									components: [
 										{
 											type: 10,
-											content: `## Your ticket has been closed!\nStaff have resolved your issue. If you need further assistance, you can create a new ticket anytime using \`/create\` command in the DM after [User Installing](https://discord.com/oauth2/authorize?client_id=${
+											content: `## Your ticket has been closed!\nStaff have resolved your issue. If you need further assistance, you can create a new ticket anytime using </create:1477209072800632845> in the DM after [User Installing](https://discord.com/oauth2/authorize?client_id=${
 												process.env.DISCORD_APPLICATION_ID
 											}&response_type=code&redirect_uri=${encodeURIComponent(
 												process.env.DISCORD_REDIRECT_URI || "",
