@@ -26,7 +26,7 @@ function splitMessageBy2000(str: string) {
 
 const messageTranslate: InteractionCommand = {
 	data: new MessageCommandBuilder()
-		.setName("message-translate")
+		.setName("Message Translate")
 		.setNameLocalizations({
 			it: "Traduci Messaggio",
 			tr: "Mesajı Çevir",
