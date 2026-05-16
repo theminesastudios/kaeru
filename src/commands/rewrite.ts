@@ -12,7 +12,7 @@ import type {
 	CommandInteraction,
 	MessageActionRowComponent,
 } from "@minesa-org/mini-interaction";
-import { KARU_AI } from "../config/ai.ts";
+import { generateKaruJson } from "../config/ai.ts";
 import {
 	emojis,
 	getEmoji,
@@ -224,11 +224,27 @@ const rewrite: InteractionCommand = {
 					default:
 						styleInstruction = "a professional, formal";
 				}
-				prompt = `The user speaks ${userLang}. Rewrite the following text strictly in ${styleInstruction} tone. Do NOT add explanations, summaries, or new information. Preserve all original meaning and language. Only change the tone and style:\n"""${input}"""`;
+				prompt = `The user speaks ${userLang}. Rewrite the following text strictly in ${styleInstruction} tone. Do NOT add explanations, summaries, or new information. Preserve all original meaning and language. Only change the tone and style.
+
+Return ONLY valid JSON with this schema:
+{
+  "output": "rewritten text"
+}
+
+Text:
+"""${input}"""`;
 				break;
 
 			case "proofread":
-				prompt = `The user speaks ${userLang}. Proofread and correct ONLY grammar, spelling, punctuation, clarity, and structure of the following text. Do NOT change tone, language, or add content. Output only the corrected text:\n"""${input}"""`;
+				prompt = `The user speaks ${userLang}. Proofread and correct ONLY grammar, spelling, punctuation, clarity, and structure of the following text. Do NOT change tone, language, or add content.
+
+Return ONLY valid JSON with this schema:
+{
+  "output": "corrected text"
+}
+
+Text:
+"""${input}"""`;
 				break;
 
 			default:
@@ -241,18 +257,23 @@ const rewrite: InteractionCommand = {
 		}
 
 		try {
-			const model = KARU_AI.getGenerativeModel({
+			const parsed = await generateKaruJson<{
+				output?: string;
+			}>({
 				model: "gemma-4-26b-a4b-it",
-				generationConfig: {
+				contents: prompt,
+				config: {
 					temperature: 0.3,
 					maxOutputTokens: 2048,
 					topP: 0.9,
 					topK: 10,
 				},
 			});
+			const output = parsed.output?.trim();
 
-			const result = await model.generateContent(prompt);
-			const output = result.response.text().trim();
+			if (!output) {
+				throw new Error("Missing rewrite output");
+			}
 
 			const row = new ActionRowBuilder<MessageActionRowComponent>().addComponents(
 				new ButtonBuilder()

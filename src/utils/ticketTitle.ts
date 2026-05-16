@@ -1,27 +1,34 @@
-import { KARU_AI } from "../config/ai.ts";
+import { generateKaruJson } from "../config/ai.ts";
 
 const MAX_TITLE_WORDS = 8;
 const MAX_THREAD_TITLE_LENGTH = 80;
-const MAX_TITLE_OUTPUT_TOKENS = 16;
 
 export async function summarizeTicketTitle(description: string): Promise<string> {
 	try {
-		const model = KARU_AI.getGenerativeModel({
+		const parsed = await generateKaruJson<{
+			title?: string;
+		}>({
 			model: "gemma-4-26b-a4b-it",
-			systemInstruction:
-				"You create concise Discord support thread titles. Return only a specific title. Never include explanations, quotes, bullets, or ticket numbers.",
-			generationConfig: {
+			contents: `Create a concise Discord support thread title.
+
+Return ONLY valid JSON with this schema:
+{
+  "title": "specific title"
+}
+
+Maximum ${MAX_TITLE_WORDS} words.
+Issue: ${description}`,
+			config: {
+				systemInstruction:
+					"You create concise Discord support thread titles. Never include explanations, quotes, bullets, or ticket numbers.",
 				temperature: 0,
-				maxOutputTokens: MAX_TITLE_OUTPUT_TOKENS,
+				maxOutputTokens: 48,
 				topK: 1,
 				topP: 0.1,
 			},
 		});
 
-		const result = await model.generateContent(
-			`Maximum ${MAX_TITLE_WORDS} words. Issue: ${description}`,
-		);
-		const title = cleanTicketTitle(result.response.text());
+		const title = cleanTicketTitle(parsed.title || "");
 		if (title) return title;
 	} catch (error) {
 		console.warn("[Kaeru] Failed to summarize ticket title with AI:", error);

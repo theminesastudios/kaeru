@@ -8,7 +8,7 @@ import type {
 	InteractionCommand,
 	MessageContextMenuInteraction,
 } from "@minesa-org/mini-interaction";
-import { KARU_AI } from "../config/ai.ts";
+import { generateKaruJson } from "../config/ai.ts";
 import {
 	getEmoji,
 	log,
@@ -90,24 +90,25 @@ const summaryKeypoints: InteractionCommand = {
 			const targetLang = langMap[userLocale] || "English";
 
 			const prompt = `
-Summarize the following text into ONE clear, concise paragraph in ${targetLang}. Then list the KEY POINTS as bullet points in ${targetLang}. Do NOT add opinions or extra details.
+Summarize the following text into ONE clear, concise paragraph in ${targetLang}. Then extract the key points in ${targetLang}. Do NOT add opinions or extra details.
+
+Return ONLY valid JSON with this schema:
+{
+  "summary": "summary paragraph",
+  "keyPoints": ["point 1", "point 2", "point 3"]
+}
 
 Text:
 """${textToSummarize.trim()}"""
-
-Format:
-Summary:
-[summary paragraph]
-
-Key Points:
-- point 1
-- point 2
-- point 3
 `.trim();
 
-			const model = KARU_AI.getGenerativeModel({
+			const parsed = await generateKaruJson<{
+				summary?: string;
+				keyPoints?: string[];
+			}>({
 				model: "gemma-4-26b-a4b-it",
-				generationConfig: {
+				contents: prompt,
+				config: {
 					temperature: 0.3,
 					maxOutputTokens: 1024,
 					topP: 0.9,
@@ -115,19 +116,17 @@ Key Points:
 				},
 			});
 
-			const result = await model.generateContent(prompt);
-			const output = result.response.text();
+			const summary = parsed.summary?.trim();
+			const keyPoints =
+				parsed.keyPoints
+					?.map((point) => point.trim())
+					.filter(Boolean)
+					.map((point) => `- ${point}`)
+					.join("\n") || "No key points extracted.";
 
-			if (!output) {
-				throw new Error("No response text from model");
+			if (!summary) {
+				throw new Error("Missing summary output");
 			}
-
-			const [summarySection, keyPointSection] = output
-				.split(/Key Points:\n?/i)
-				.map((s) => s.trim());
-
-			const summary = summarySection.replace(/^Summary:\n?/i, "").trim();
-			const keyPoints = keyPointSection || "No key points extracted.";
 
 			const summaryTextSection = `## ${getEmoji(
 				"text_append",

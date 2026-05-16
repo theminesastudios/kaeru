@@ -12,7 +12,7 @@ import type {
 	MessageContextMenuInteraction,
 } from "@minesa-org/mini-interaction";
 
-import { KARU_AI } from "../config/ai.ts";
+import { generateKaruJson } from "../config/ai.ts";
 
 import {
 	getEmoji,
@@ -105,20 +105,6 @@ const messageTranslate: InteractionCommand = {
 				langMap[rawLang] ||
 				"english";
 
-			const model =
-				KARU_AI.getGenerativeModel({
-					model: "gemma-4-26b-a4b-it",
-
-					generationConfig: {
-						temperature: 0.1,
-						maxOutputTokens: 250,
-						topP: 0.8,
-						topK: 20,
-						responseMimeType:
-							"application/json",
-					},
-				});
-
 			const prompt = `
 Translate the following message into ${targetLang}.
 
@@ -134,24 +120,19 @@ Message:
 ${safeMessage}
 `.trim();
 
-			const result =
-				await model.generateContent(prompt);
-
-			const raw =
-				result.response.text().trim();
-
-			let parsed: {
+			const parsed = await generateKaruJson<{
 				language?: string;
 				translation?: string;
-			};
-
-			try {
-				parsed = JSON.parse(raw);
-			} catch {
-				throw new Error(
-					"Invalid JSON response from AI",
-				);
-			}
+			}>({
+				model: "gemma-4-26b-a4b-it",
+				contents: prompt,
+				config: {
+					temperature: 0.1,
+					maxOutputTokens: 250,
+					topP: 0.8,
+					topK: 20,
+				},
+			});
 
 			const detectedLang =
 				parsed.language?.trim() ||

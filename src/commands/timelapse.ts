@@ -8,7 +8,7 @@ import type {
 	CommandInteraction,
 	InteractionCommand,
 } from "@minesa-org/mini-interaction";
-import { KARU_AI } from "../config/ai.ts";
+import { generateKaruJson } from "../config/ai.ts";
 import {
 	containerTemplate,
 	getEmoji,
@@ -126,25 +126,31 @@ const timelapse: InteractionCommand = {
 You are an AI assistant. Summarize the following Discord messages in a short, continuous text. 
 Do not create lists, bullet points, or key points. Just condense the messages into a brief readable text.
 
+Return ONLY valid JSON with this schema:
+{
+  "summary": "brief readable text"
+}
+
 Messages:
 ${content}
 `;
 
-			const model = KARU_AI.getGenerativeModel({
+			const parsed = await generateKaruJson<{
+				summary?: string;
+			}>({
 				model: "gemma-4-26b-a4b-it",
-				generationConfig: {
+				contents: fullPrompt,
+				config: {
 					temperature: 0.2,
 					maxOutputTokens: 800,
 					topK: 1,
 					topP: 1,
 				},
 			});
-
-			const result = await model.generateContent(fullPrompt);
-			const output = result.response.text().trim();
+			const output = parsed.summary?.trim();
 
 			if (!output) {
-				throw new Error("No response text from model");
+				throw new Error("Missing timelapse summary output");
 			}
 
 			await interaction.editReply({

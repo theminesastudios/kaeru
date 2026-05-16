@@ -12,7 +12,7 @@
     },
     "api/interactions.ts": {
       "maxDuration": 60,
-      "includeFiles": "{src/{commands,components,utils,config}/**,node_modules/@google/generative-ai/**}"
+      "includeFiles": "{src/{commands,components,utils,config}/**,node_modules/**}"
     },
     "api/discord-oauth-callback.ts": {
       "maxDuration": 10,
