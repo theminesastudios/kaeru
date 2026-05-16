@@ -31,6 +31,10 @@ const closeCommand: InteractionCommand = {
 			});
 		}
 
+		await interaction.deferReply({
+			flags: InteractionFlags.Ephemeral,
+		});
+
 		if (isDM) {
 			// Check for close cooldown (30 minutes) - only for users in DMs
 			const cooldownKey = `cooldown:close:${user.id}`;
@@ -70,8 +74,8 @@ const closeCommand: InteractionCommand = {
 					});
 				}
 
-				await interaction.deferReply({
-					flags: InteractionFlags.Ephemeral,
+				await interaction.editReply({
+					content: `${getEmoji("ticket.archive.user")} Closing your ticket...`,
 				});
 
 				// Warn user about cooldown policy via DM
@@ -195,8 +199,8 @@ const closeCommand: InteractionCommand = {
 				});
 			}
 
-			await interaction.deferReply({
-				flags: InteractionFlags.Ephemeral,
+			await interaction.editReply({
+				content: `${getEmoji("ticket.archive.server")} Closing the ticket...`,
 			});
 
 			try {
