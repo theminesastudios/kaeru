@@ -1,4 +1,11 @@
 import { MiniInteraction, verifyAndParseInteraction } from "@minesa-org/mini-interaction";
+import {
+	InteractionResponseType,
+	InteractionType,
+	type APIApplicationCommandAutocompleteInteraction,
+	type APIInteractionResponse,
+} from "discord-api-types/v10";
+import { getTranslationLanguageChoices } from "../src/utils/translationLanguages.ts";
 
 type HeaderMap =
 	| Record<string, string | string[] | undefined>
@@ -63,12 +70,17 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
 	}
 
 	try {
-		await verifyAndParseInteraction({
+		const interaction = await verifyAndParseInteraction({
 			body,
 			signature,
 			timestamp,
 			publicKey,
 		});
+
+		if (interaction.type === InteractionType.ApplicationCommandAutocomplete) {
+			sendJson(res, 200, handleAutocomplete(interaction));
+			return;
+		}
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "";
 		if (message.includes("invalid interaction signature")) {
@@ -80,6 +92,49 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
 	}
 
 	return nodeHandler(req, res);
+}
+
+function handleAutocomplete(
+	interaction: APIApplicationCommandAutocompleteInteraction,
+): APIInteractionResponse {
+	if (interaction.data.name !== "translate") {
+		return autocompleteResponse([]);
+	}
+
+	const focusedOption = findFocusedOption(interaction.data.options);
+	if (focusedOption?.name !== "language") {
+		return autocompleteResponse([]);
+	}
+
+	return autocompleteResponse(getTranslationLanguageChoices(String(focusedOption.value ?? "")));
+}
+
+function autocompleteResponse(choices: { name: string; value: string }[]): APIInteractionResponse {
+	return {
+		type: InteractionResponseType.ApplicationCommandAutocompleteResult,
+		data: {
+			choices,
+		},
+	};
+}
+
+function findFocusedOption(options: FocusableOption[] | undefined): FocusableOption | null {
+	if (!options) {
+		return null;
+	}
+
+	for (const option of options) {
+		if (option.focused) {
+			return option;
+		}
+
+		const nested = findFocusedOption(option.options);
+		if (nested) {
+			return nested;
+		}
+	}
+
+	return null;
 }
 
 async function readRawBody(req: NodeRequest) {
@@ -139,3 +194,10 @@ function sendText(res: NodeResponse, statusCode: number, body: string) {
 	res.setHeader?.("Content-Type", "text/plain; charset=utf-8");
 	res.end(body);
 }
+
+type FocusableOption = {
+	name: string;
+	value?: string | number | boolean;
+	focused?: boolean;
+	options?: FocusableOption[];
+};

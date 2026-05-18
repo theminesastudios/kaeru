@@ -8,16 +8,10 @@ import {
 } from "@minesa-org/mini-interaction";
 import type { CommandInteraction, InteractionCommand } from "@minesa-org/mini-interaction";
 import { generateKaruJson } from "../config/ai.ts";
-import { getEmoji, langMap, log, sendAlertMessage } from "../utils/index.ts";
+import { getEmoji, log, sendAlertMessage } from "../utils/index.ts";
+import { resolveTranslationLanguage } from "../utils/translationLanguages.ts";
 
 const MAX_COMPONENT_TEXT_LENGTH = 1800;
-
-function resolveTargetLanguage(language: string) {
-	const normalized = language.trim();
-	const key = normalized.toLowerCase().replaceAll("_", "-");
-
-	return langMap[key] || langMap[key.split("-")[0]] || normalized;
-}
 
 function splitComponentText(text: string) {
 	const chunks: string[] = [];
@@ -78,7 +72,8 @@ const translate: InteractionCommand = {
 				})
 				.setRequired(true)
 				.setMinLength(2)
-				.setMaxLength(64),
+				.setMaxLength(64)
+				.setAutocomplete(true),
 		)
 		.addStringOption((opt) =>
 			opt
@@ -111,7 +106,7 @@ const translate: InteractionCommand = {
 			});
 		}
 
-		const targetLanguage = resolveTargetLanguage(languageInput);
+		const targetLanguage = resolveTranslationLanguage(languageInput);
 
 		const prompt = `
 Translate the user's text into ${targetLanguage}.
