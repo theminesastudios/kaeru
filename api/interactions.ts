@@ -97,12 +97,12 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
 function handleAutocomplete(
 	interaction: APIApplicationCommandAutocompleteInteraction,
 ): APIInteractionResponse {
-	if (interaction.data.name !== "translate") {
+	if (!["çevir", "translate"].includes(interaction.data.name)) {
 		return autocompleteResponse([]);
 	}
 
 	const focusedOption = findFocusedOption(interaction.data.options);
-	if (focusedOption?.name !== "language") {
+	if (!focusedOption || !["dil", "language"].includes(focusedOption.name)) {
 		return autocompleteResponse([]);
 	}
 

@@ -11,7 +11,7 @@ import { generateKaruJson } from "../config/ai.ts";
 import { getEmoji, log, sendAlertMessage } from "../utils/index.ts";
 import { resolveTranslationLanguage } from "../utils/translationLanguages.ts";
 
-const MAX_COMPONENT_TEXT_LENGTH = 1800;
+const MAX_COMPONENT_TEXT_LENGTH = 3900;
 
 function splitComponentText(text: string) {
 	const chunks: string[] = [];
@@ -41,15 +41,22 @@ function buildTranslationContainer(content: string) {
 	return new ContainerBuilder().addComponent(new TextDisplayBuilder().setContent(content));
 }
 
+function formatCodeBlock(content: string) {
+	const longestFence = content.match(/`{3,}/g)?.reduce((max, fence) => Math.max(max, fence.length), 2) ?? 2;
+	const fence = "`".repeat(Math.max(3, longestFence + 1));
+
+	return `${fence}\n${content}\n${fence}`;
+}
+
 const translate: InteractionCommand = {
 	data: new CommandBuilder()
-		.setName("translate")
+		.setName("çevir")
 		.setNameLocalizations({
-			tr: "cevir",
+			"en-US": "translate",
 		})
-		.setDescription("Translate text into another language with AI")
+		.setDescription("Metni yapay zeka ile başka bir dile çevir")
 		.setDescriptionLocalizations({
-			tr: "Metni yapay zeka ile baska bir dile cevir",
+			"en-US": "Translate text into another language with AI",
 		})
 		.setIntegrationTypes([
 			IntegrationType.UserInstall,
@@ -62,13 +69,13 @@ const translate: InteractionCommand = {
 		])
 		.addStringOption((opt) =>
 			opt
-				.setName("language")
+				.setName("dil")
 				.setNameLocalizations({
-					tr: "dil",
+					"en-US": "language",
 				})
-				.setDescription("Target language")
+				.setDescription("Hedef dil")
 				.setDescriptionLocalizations({
-					tr: "Cevrilecek hedef dil",
+					"en-US": "Target language",
 				})
 				.setRequired(true)
 				.setMinLength(2)
@@ -77,13 +84,13 @@ const translate: InteractionCommand = {
 		)
 		.addStringOption((opt) =>
 			opt
-				.setName("text")
+				.setName("metin")
 				.setNameLocalizations({
-					tr: "metin",
+					"en-US": "text",
 				})
-				.setDescription("Text to translate")
+				.setDescription("Çevrilecek metin")
 				.setDescriptionLocalizations({
-					tr: "Cevrilecek metin",
+					"en-US": "Text to translate",
 				})
 				.setRequired(true)
 				.setMinLength(1)
@@ -95,8 +102,8 @@ const translate: InteractionCommand = {
 			flags: InteractionFlags.Ephemeral | InteractionFlags.IsComponentsV2,
 		});
 
-		const languageInput = interaction.options.getString("language")?.trim();
-		const textInput = interaction.options.getString("text")?.trim();
+		const languageInput = interaction.options.getString("dil")?.trim();
+		const textInput = interaction.options.getString("metin")?.trim();
 
 		if (!languageInput || !textInput) {
 			return sendAlertMessage({
@@ -152,10 +159,10 @@ Text:
 			const detectedLanguage = parsed.detectedLanguage?.trim() || "Unknown";
 			const resolvedTargetLanguage = parsed.targetLanguage?.trim() || targetLanguage;
 			const output = [
-				`## ${getEmoji("globe")} Translation`,
-				`-# ${detectedLanguage} -> ${resolvedTargetLanguage}`,
+				`## ${getEmoji("globe")} Çeviri`,
+				`-# ${detectedLanguage} → ${resolvedTargetLanguage}`,
 				"",
-				translation,
+				formatCodeBlock(translation),
 			].join("\n");
 			const chunks = splitComponentText(output);
 
