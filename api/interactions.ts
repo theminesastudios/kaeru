@@ -5,7 +5,10 @@ import {
 	type APIApplicationCommandAutocompleteInteraction,
 	type APIInteractionResponse,
 } from "discord-api-types/v10";
-import { getTranslationLanguageChoices } from "../src/utils/translationLanguages.ts";
+import {
+	getTranslationLanguageChoices,
+	type TranslationLanguageChoice,
+} from "../src/utils/translationLanguages.ts";
 
 type HeaderMap =
 	| Record<string, string | string[] | undefined>
@@ -106,10 +109,12 @@ function handleAutocomplete(
 		return autocompleteResponse([]);
 	}
 
-	return autocompleteResponse(getTranslationLanguageChoices(String(focusedOption.value ?? "")));
+	return autocompleteResponse(
+		getTranslationLanguageChoices(String(focusedOption.value ?? ""), 25, interaction.locale),
+	);
 }
 
-function autocompleteResponse(choices: { name: string; value: string }[]): APIInteractionResponse {
+function autocompleteResponse(choices: TranslationLanguageChoice[]): APIInteractionResponse {
 	return {
 		type: InteractionResponseType.ApplicationCommandAutocompleteResult,
 		data: {
