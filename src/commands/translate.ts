@@ -1,17 +1,15 @@
 import {
 	CommandBuilder,
 	CommandContext,
-	ContainerBuilder,
 	IntegrationType,
 	InteractionFlags,
-	TextDisplayBuilder,
 } from "@minesa-org/mini-interaction";
 import type { CommandInteraction, InteractionCommand } from "@minesa-org/mini-interaction";
 import { generateKaruJson } from "../config/ai.ts";
-import { log, sendAlertMessage } from "../utils/index.ts";
+import { log } from "../utils/index.ts";
 import { resolveTranslationLanguage } from "../utils/translationLanguages.ts";
 
-const MAX_COMPONENT_TEXT_LENGTH = 3900;
+const MAX_MESSAGE_TEXT_LENGTH = 2000;
 
 const COMMAND_NAME_LOCALIZATIONS = {
 	"en-US": "translate",
@@ -103,17 +101,17 @@ const TEXT_OPTION_DESCRIPTION_LOCALIZATIONS = {
 	ko: "번역할 텍스트",
 };
 
-function splitComponentText(text: string) {
+function splitMessageText(text: string) {
 	const chunks: string[] = [];
 	let remaining = text.trim();
 
-	while (remaining.length > MAX_COMPONENT_TEXT_LENGTH) {
-		let splitIndex = remaining.lastIndexOf("\n", MAX_COMPONENT_TEXT_LENGTH);
-		if (splitIndex < MAX_COMPONENT_TEXT_LENGTH * 0.5) {
-			splitIndex = remaining.lastIndexOf(" ", MAX_COMPONENT_TEXT_LENGTH);
+	while (remaining.length > MAX_MESSAGE_TEXT_LENGTH) {
+		let splitIndex = remaining.lastIndexOf("\n", MAX_MESSAGE_TEXT_LENGTH);
+		if (splitIndex < MAX_MESSAGE_TEXT_LENGTH * 0.5) {
+			splitIndex = remaining.lastIndexOf(" ", MAX_MESSAGE_TEXT_LENGTH);
 		}
 		if (splitIndex <= 0) {
-			splitIndex = MAX_COMPONENT_TEXT_LENGTH;
+			splitIndex = MAX_MESSAGE_TEXT_LENGTH;
 		}
 
 		chunks.push(remaining.slice(0, splitIndex).trim());
@@ -125,17 +123,6 @@ function splitComponentText(text: string) {
 	}
 
 	return chunks;
-}
-
-function buildTranslationContainer(content: string) {
-	return new ContainerBuilder().addComponent(new TextDisplayBuilder().setContent(content));
-}
-
-function formatCodeBlock(content: string) {
-	const longestFence = content.match(/`{3,}/g)?.reduce((max, fence) => Math.max(max, fence.length), 2) ?? 2;
-	const fence = "`".repeat(Math.max(3, longestFence + 1));
-
-	return `${fence}\n${content}\n${fence}`;
 }
 
 const translate: InteractionCommand = {
@@ -177,17 +164,15 @@ const translate: InteractionCommand = {
 
 	handler: async (interaction: CommandInteraction) => {
 		await interaction.deferReply({
-			flags: InteractionFlags.Ephemeral | InteractionFlags.IsComponentsV2,
+			flags: InteractionFlags.Ephemeral,
 		});
 
 		const languageInput = interaction.options.getString("dil")?.trim();
 		const textInput = interaction.options.getString("metin")?.trim();
 
 		if (!languageInput || !textInput) {
-			return sendAlertMessage({
-				interaction,
+			return interaction.editReply({
 				content: "Please provide both a target language and text to translate.",
-				type: "info",
 			});
 		}
 
@@ -234,28 +219,24 @@ Text:
 				throw new Error("Missing translation output");
 			}
 
-			const output = formatCodeBlock(translation);
-			const chunks = splitComponentText(output);
+			const chunks = splitMessageText(translation);
 
 			await interaction.editReply({
-				components: [buildTranslationContainer(chunks[0])],
+				content: chunks[0],
 			});
 
 			for (let i = 1; i < chunks.length; i++) {
 				await interaction.followUp({
-					components: [buildTranslationContainer(chunks[i])],
-					flags: InteractionFlags.Ephemeral | InteractionFlags.IsComponentsV2,
+					content: chunks[i],
+					flags: InteractionFlags.Ephemeral,
 				});
 			}
 		} catch (error) {
 			log("error", "Failed to execute translate command:", error);
 
-			return sendAlertMessage({
-				interaction,
+			return interaction.editReply({
 				content:
 					"Failed to translate with Karu. The system might be confused - try again in a moment.",
-				type: "error",
-				tag: "AI Issue",
 			});
 		}
 	},
