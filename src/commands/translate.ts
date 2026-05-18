@@ -12,7 +12,7 @@ import { resolveTranslationLanguage } from "../utils/translationLanguages.ts";
 const MAX_MESSAGE_TEXT_LENGTH = 2000;
 
 const COMMAND_NAME_LOCALIZATIONS = {
-	"en-US": "translate",
+	tr: "çevir",
 	"pt-BR": "traduzir",
 	it: "traduci",
 	de: "übersetzen",
@@ -127,7 +127,7 @@ function splitMessageText(text: string) {
 
 const translate: InteractionCommand = {
 	data: new CommandBuilder()
-		.setName("çevir")
+		.setName("translate")
 		.setNameLocalizations(COMMAND_NAME_LOCALIZATIONS)
 		.setDescription("Metni yapay zeka ile başka bir dile çevir")
 		.setDescriptionLocalizations(COMMAND_DESCRIPTION_LOCALIZATIONS)
