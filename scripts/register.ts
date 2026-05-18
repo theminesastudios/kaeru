@@ -1,6 +1,5 @@
 import "dotenv/config";
 import { RoleConnectionMetadataTypes, type RoleConnectionMetadataInput } from "@minesa-org/mini-interaction";
-import { mini } from "../api/interactions";
 
 const ROLE_CONNECTION_METADATA: RoleConnectionMetadataInput[] = [
 	{
@@ -17,12 +16,19 @@ const ROLE_CONNECTION_METADATA: RoleConnectionMetadataInput[] = [
 	},
 ];
 
-if (!process.env.DISCORD_BOT_TOKEN) {
-	console.log("⚠️ DISCORD_BOT_TOKEN not found. Skipping command registration.");
+const applicationId = process.env.DISCORD_APPLICATION_ID ?? process.env.DISCORD_APP_ID;
+const botToken = process.env.DISCORD_BOT_TOKEN ?? process.env.DISCORD_TOKEN;
+
+if (!applicationId || !botToken) {
+	console.log(
+		"Discord application id or bot token not found. Set DISCORD_APPLICATION_ID/DISCORD_APP_ID and DISCORD_BOT_TOKEN/DISCORD_TOKEN. Skipping command registration.",
+	);
 	process.exit(0);
 }
 
-await mini.registerCommands(process.env.DISCORD_BOT_TOKEN!);
-await mini.registerMetadata(process.env.DISCORD_BOT_TOKEN!, ROLE_CONNECTION_METADATA);
+const { mini } = await import("../api/interactions");
+
+await mini.registerCommands(botToken);
+await mini.registerMetadata(botToken, ROLE_CONNECTION_METADATA);
 
 console.log("Registration complete!");
