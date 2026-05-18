@@ -17,8 +17,18 @@
     "api/discord-oauth-callback.ts": {
       "maxDuration": 10,
       "includeFiles": "{dist/**,public/pages/**}"
+    },
+    "api/voice-cleanup.ts": {
+      "maxDuration": 60,
+      "includeFiles": "{src/utils/**,node_modules/**}"
     }
   },
+  "crons": [
+    {
+      "path": "/api/voice-cleanup",
+      "schedule": "0 0 * * *"
+    }
+  ],
   "buildCommand": "npm run build",
   "outputDirectory": ".",
   "installCommand": "npm install"
