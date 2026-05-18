@@ -8,7 +8,7 @@ import {
 } from "@minesa-org/mini-interaction";
 import type { CommandInteraction, InteractionCommand } from "@minesa-org/mini-interaction";
 import { generateKaruJson } from "../config/ai.ts";
-import { getEmoji, log, sendAlertMessage } from "../utils/index.ts";
+import { log, sendAlertMessage } from "../utils/index.ts";
 import { resolveTranslationLanguage } from "../utils/translationLanguages.ts";
 
 const MAX_COMPONENT_TEXT_LENGTH = 3900;
@@ -234,14 +234,7 @@ Text:
 				throw new Error("Missing translation output");
 			}
 
-			const detectedLanguage = parsed.detectedLanguage?.trim() || "Unknown";
-			const resolvedTargetLanguage = parsed.targetLanguage?.trim() || targetLanguage;
-			const output = [
-				`## ${getEmoji("globe")} Çeviri`,
-				`-# ${detectedLanguage} → ${resolvedTargetLanguage}`,
-				"",
-				formatCodeBlock(translation),
-			].join("\n");
+			const output = formatCodeBlock(translation);
 			const chunks = splitComponentText(output);
 
 			await interaction.editReply({
