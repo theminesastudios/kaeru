@@ -4,4 +4,3 @@ export * from "./logger.ts";
 export * from "./alert.ts";
 export * from "./database.ts";
 export * from "./discord.ts";
-export * from "./customVoice.ts";
