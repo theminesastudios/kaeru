@@ -1,5 +1,5 @@
-import { mini } from "./interactions.js";
+import { discordOAuthVerificationPage } from "./oauth.js";
 
-export default mini.discordOAuthVerificationPage({
+export default discordOAuthVerificationPage({
 	htmlFile: "index.html",
 });

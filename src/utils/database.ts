@@ -1,5 +1,7 @@
 import { MiniDatabase } from '@minesa-org/mini-interaction'
 
+type Database = ReturnType<typeof MiniDatabase.fromEnv>
+
 type DiscordConnection = {
   type?: string
   name?: string
@@ -80,10 +82,23 @@ async function isUserMemberOfGithubOrg(githubUsername: string) {
   return false
 }
 
+let database: Database | null = null
+
 /**
  * Shared database instance for the application.
  */
-export const db = MiniDatabase.fromEnv()
+export function getDatabase() {
+  database ??= MiniDatabase.fromEnv()
+  return database
+}
+
+export const db: Pick<Database, 'get' | 'set' | 'update' | 'delete' | 'close'> = {
+  get: (...args) => getDatabase().get(...args),
+  set: (...args) => getDatabase().set(...args),
+  update: (...args) => getDatabase().update(...args),
+  delete: (...args) => getDatabase().delete(...args),
+  close: (...args) => getDatabase().close(...args)
+}
 
 /**
  * Gets user data from the database.

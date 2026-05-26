@@ -8,15 +8,15 @@
   "functions": {
     "api/index.ts": {
       "maxDuration": 10,
-      "includeFiles": "public/pages/verify.html"
+      "includeFiles": "{api/oauth.ts,index.html,node_modules/**}"
     },
     "api/interactions.ts": {
       "maxDuration": 60,
-      "includeFiles": "{src/{commands,components,utils,config}/**,node_modules/**}"
+      "includeFiles": "{src/**,node_modules/**}"
     },
     "api/discord-oauth-callback.ts": {
       "maxDuration": 10,
-      "includeFiles": "{dist/**,public/pages/**}"
+      "includeFiles": "{api/oauth.ts,src/utils/**,public/pages/**,node_modules/**}"
     }
   },
   "buildCommand": "npm run build",

@@ -1,4 +1,4 @@
-import { langMap } from "./languageMap.ts";
+import { langMap } from "./languageMap.js";
 
 type TranslationLanguageEntry = {
 	value: string;

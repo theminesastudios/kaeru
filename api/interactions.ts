@@ -8,7 +8,7 @@ import {
 import {
 	getTranslationLanguageChoices,
 	type TranslationLanguageChoice,
-} from "../src/utils/translationLanguages.ts";
+} from "../src/utils/translationLanguages.js";
 
 type HeaderMap =
 	| Record<string, string | string[] | undefined>

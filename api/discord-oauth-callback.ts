@@ -1,20 +1,21 @@
-import { MiniDatabase } from "@minesa-org/mini-interaction";
-import { mini } from "./interactions.js";
+import { connectedOAuthPage, discordOAuthCallback, failedOAuthPage } from "./oauth.js";
 import { updateDiscordMetadata } from "../src/utils/database.js";
 import { fetchDiscord } from "../src/utils/discord.js";
 
-const database = MiniDatabase.fromEnv();
-const failedPage = mini.failedOAuthPage("public/pages/failed.html");
+const failedPage = failedOAuthPage("public/pages/failed.html");
 
-export default mini.discordOAuthCallback({
+export default discordOAuthCallback({
 	templates: {
-		success: mini.connectedOAuthPage("public/pages/connected.html"),
+		success: connectedOAuthPage("public/pages/connected.html"),
 		missingCode: failedPage,
 		oauthError: failedPage,
 		invalidState: failedPage,
 		serverError: failedPage,
 	},
 	async onAuthorize({ user, tokens }: { user: any; tokens: any }) {
+		const { getDatabase } = await import("../src/utils/database.js");
+		const database = getDatabase();
+
 		await database.set(user.id, {
 			accessToken: tokens.access_token,
 			refreshToken: tokens.refresh_token,
