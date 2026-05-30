@@ -35,6 +35,74 @@ export async function generateKaruText({
 	throw lastError;
 }
 
+function extractJsonFromText(raw: string): string | null {
+	const trimmed = raw.trim();
+
+	if (
+		trimmed.startsWith("{") && trimmed.endsWith("}") ||
+		trimmed.startsWith("[") && trimmed.endsWith("]")
+	) {
+		return trimmed;
+	}
+
+	const fencedMatch = trimmed.match(
+		/```(?:json)?\s*([\s\S]*?)\s*```/i,
+	);
+	if (fencedMatch) {
+		return fencedMatch[1].trim();
+	}
+
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+	let jsonStart = -1;
+
+	for (let i = 0; i < raw.length; i++) {
+		const ch = raw[i];
+
+		if (inString) {
+			if (escaped) {
+				escaped = false;
+				continue;
+			}
+			if (ch === "\\") {
+				escaped = true;
+				continue;
+			}
+			if (ch === '"') {
+				inString = false;
+			}
+			continue;
+		}
+
+		if (ch === '"') {
+			inString = true;
+			continue;
+		}
+
+		if (ch === "{" || ch === "[") {
+			if (jsonStart === -1) {
+				jsonStart = i;
+			}
+			depth++;
+			continue;
+		}
+
+		if (ch === "}" || ch === "]") {
+			if (jsonStart === -1) {
+				continue;
+			}
+
+			depth--;
+			if (depth === 0) {
+				return raw.slice(jsonStart, i + 1).trim();
+			}
+		}
+	}
+
+	return null;
+}
+
 export async function generateKaruJson<T>(args: {
 	model: string | string[];
 	contents: string;
@@ -51,8 +119,7 @@ export async function generateKaruJson<T>(args: {
 	try {
 		return JSON.parse(raw) as T;
 	} catch {
-		const json = raw.match(/\{[\s\S]*\}/)?.[0];
-
+		const json = extractJsonFromText(raw);
 		if (json) {
 			return JSON.parse(json) as T;
 		}
