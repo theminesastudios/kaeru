@@ -126,10 +126,7 @@ function extractJsonCandidates(raw: string): string[] {
 	return candidates;
 }
 
-function extractQuotedField(
-	raw: string,
-	key: string,
-): string | undefined {
+function extractQuotedField(raw: string, key: string): string | undefined {
 	const keyPattern = new RegExp(
 		`(?:[\"']${key}[\"']|${key})\s*:\s*`,
 		"i",
@@ -194,6 +191,29 @@ function extractQuotedField(
 	return undefined;
 }
 
+function tryParseJson<T>(raw: string): T | undefined {
+	try {
+		return JSON.parse(raw) as T;
+	} catch {}
+
+	for (const json of extractJsonCandidates(raw)) {
+		try {
+			return JSON.parse(json) as T;
+		} catch {}
+	}
+
+	const language = extractQuotedField(raw, "language");
+	const translation = extractQuotedField(raw, "translation");
+	if (language !== undefined || translation !== undefined) {
+		return {
+			language,
+			translation,
+		} as T;
+	}
+
+	return undefined;
+}
+
 export async function generateKaruJson<T>(args: {
 	model: string | string[];
 	contents: string;
@@ -207,27 +227,31 @@ export async function generateKaruJson<T>(args: {
 		},
 	});
 
-	try {
-		return JSON.parse(raw) as T;
-	} catch {
-		for (const json of extractJsonCandidates(raw)) {
-			try {
-				return JSON.parse(json) as T;
-			} catch {}
-		}
-
-		const language = extractQuotedField(raw, "language");
-		const translation = extractQuotedField(raw, "translation");
-		if (language !== undefined || translation !== undefined) {
-			return {
-				language,
-				translation,
-			} as T;
-		}
-
-		const preview = raw.length > 300 ? `${raw.slice(0, 300)}...` : raw;
-		throw new Error(
-			`Invalid JSON response from AI: ${preview}`,
-		);
+	const normalizedRaw = raw.trim();
+	const parsed = tryParseJson<T>(normalizedRaw);
+	if (parsed) {
+		return parsed;
 	}
+
+	const plainTextRaw = await generateKaruText({
+		...args,
+		config: {
+			...args.config,
+		},
+	});
+
+	const fallbackParsed = tryParseJson<T>(plainTextRaw.trim());
+	if (fallbackParsed) {
+		return fallbackParsed;
+	}
+
+	const rawPreview = normalizedRaw.length > 300
+		? `${normalizedRaw.slice(0, 300)}...`
+		: normalizedRaw || "<empty>";
+	const plainPreview = plainTextRaw.length > 300
+		? `${plainTextRaw.slice(0, 300)}...`
+		: plainTextRaw || "<empty>";
+	throw new Error(
+		`Invalid JSON response from AI: jsonLen=${normalizedRaw.length}, textLen=${plainTextRaw.length}, jsonPreview=${rawPreview}, textPreview=${plainPreview}`,
+	);
 }
