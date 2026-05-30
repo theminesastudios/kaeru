@@ -126,6 +126,74 @@ function extractJsonCandidates(raw: string): string[] {
 	return candidates;
 }
 
+function extractQuotedField(
+	raw: string,
+	key: string,
+): string | undefined {
+	const keyPattern = new RegExp(
+		`(?:[\"']${key}[\"']|${key})\s*:\s*`,
+		"i",
+	);
+	const match = raw.match(keyPattern);
+	if (!match || match.index === undefined) {
+		return undefined;
+	}
+
+	let i = match.index + match[0].length;
+
+	while (i < raw.length && /\s/.test(raw[i])) {
+		i++;
+	}
+
+	if (i >= raw.length) {
+		return undefined;
+	}
+
+	const quote = raw[i];
+	if (quote !== '"' && quote !== "'") {
+		const unquoted = raw.slice(i).match(/^[^,\n}]+/);
+		if (!unquoted) {
+			return undefined;
+		}
+
+		return unquoted[0].trim();
+	}
+
+	i++;
+	let result = "";
+	let escaped = false;
+
+	while (i < raw.length) {
+		const ch = raw[i];
+
+		if (escaped) {
+			if (ch === "n") {
+				result += "\\n";
+			} else {
+				result += ch;
+			}
+			escaped = false;
+			i++;
+			continue;
+		}
+
+		if (ch === "\\") {
+			escaped = true;
+			i++;
+			continue;
+		}
+
+		if (ch === quote) {
+			return result;
+		}
+
+		result += ch;
+		i++;
+	}
+
+	return undefined;
+}
+
 export async function generateKaruJson<T>(args: {
 	model: string | string[];
 	contents: string;
@@ -148,6 +216,18 @@ export async function generateKaruJson<T>(args: {
 			} catch {}
 		}
 
-		throw new Error("Invalid JSON response from AI");
+		const language = extractQuotedField(raw, "language");
+		const translation = extractQuotedField(raw, "translation");
+		if (language !== undefined || translation !== undefined) {
+			return {
+				language,
+				translation,
+			} as T;
+		}
+
+		const preview = raw.length > 300 ? `${raw.slice(0, 300)}...` : raw;
+		throw new Error(
+			`Invalid JSON response from AI: ${preview}`,
+		);
 	}
 }
