@@ -35,24 +35,40 @@ export async function generateKaruText({
 	throw lastError;
 }
 
-function extractJsonFromText(raw: string): string | null {
+
+function extractJsonCandidates(raw: string): string[] {
+	const candidates: string[] = [];
+
+	const add = (value: string | undefined | null) => {
+		const candidate = value?.trim();
+		if (candidate) {
+			candidates.push(candidate);
+		}
+	};
+
 	const trimmed = raw.trim();
 
 	if (
 		trimmed.startsWith("{") && trimmed.endsWith("}") ||
 		trimmed.startsWith("[") && trimmed.endsWith("]")
 	) {
-		return trimmed;
+		add(trimmed);
 	}
 
-	const fencedMatch = trimmed.match(
-		/```(?:json)?\s*([\s\S]*?)\s*```/i,
+	const fencedMatches = raw.matchAll(
+		/```(?:json)?\s*([\s\S]*?)\s*```/gi,
 	);
-	if (fencedMatch) {
-		return fencedMatch[1].trim();
+	for (const fencedMatch of fencedMatches) {
+		if (
+			fencedMatch[1]?.startsWith("{") ||
+			fencedMatch[1]?.startsWith("[")
+		) {
+			add(fencedMatch[1]);
+		}
 	}
 
 	let depth = 0;
+	const expectedClosers: string[] = [];
 	let inString = false;
 	let escaped = false;
 	let jsonStart = -1;
@@ -84,6 +100,7 @@ function extractJsonFromText(raw: string): string | null {
 			if (jsonStart === -1) {
 				jsonStart = i;
 			}
+			expectedClosers.push(ch === "{" ? "}" : "]");
 			depth++;
 			continue;
 		}
@@ -93,14 +110,20 @@ function extractJsonFromText(raw: string): string | null {
 				continue;
 			}
 
+			const expected = expectedClosers.pop();
+			if (expected !== ch) {
+				continue;
+			}
+
 			depth--;
 			if (depth === 0) {
-				return raw.slice(jsonStart, i + 1).trim();
+				add(raw.slice(jsonStart, i + 1));
+				jsonStart = -1;
 			}
 		}
 	}
 
-	return null;
+	return candidates;
 }
 
 export async function generateKaruJson<T>(args: {
@@ -119,9 +142,10 @@ export async function generateKaruJson<T>(args: {
 	try {
 		return JSON.parse(raw) as T;
 	} catch {
-		const json = extractJsonFromText(raw);
-		if (json) {
-			return JSON.parse(json) as T;
+		for (const json of extractJsonCandidates(raw)) {
+			try {
+				return JSON.parse(json) as T;
+			} catch {}
 		}
 
 		throw new Error("Invalid JSON response from AI");
