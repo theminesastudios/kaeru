@@ -12,7 +12,7 @@ import type {
 	MessageContextMenuInteraction,
 } from "@minesa-org/mini-interaction";
 
-import { generateKaruJson } from "../config/ai.ts";
+import { generateKaruText } from "../config/ai.ts";
 
 import {
 	getEmoji,
@@ -29,6 +29,40 @@ function splitMessageBy2000(str: string) {
 	}
 
 	return chunks;
+}
+
+async function translateMessage({
+	targetLang,
+	safeMessage,
+}: {
+	targetLang: string;
+	safeMessage: string;
+}) {
+	const translated = await generateKaruText({
+		model: "gemma-4-26b-a4b-it",
+		contents: `
+Translate the following message into ${targetLang}.
+
+Return only the translated text. Do not include explanations, labels, JSON, or quotes.
+
+Message:
+${safeMessage}
+`.trim(),
+		config: {
+			temperature: 0.1,
+			maxOutputTokens: 2048,
+			topP: 0.8,
+			topK: 20,
+			thinkingConfig: {
+				thinkingBudget: 0,
+			},
+		},
+	});
+
+	return {
+		detectedLang: "Unknown",
+		translated: translated.trim(),
+	};
 }
 
 const messageTranslate: InteractionCommand = {
@@ -105,41 +139,11 @@ const messageTranslate: InteractionCommand = {
 				langMap[rawLang] ||
 				"english";
 
-			const prompt = `
-Translate the following message into ${targetLang}.
-
-Return ONLY valid JSON.
-
-Schema:
-{
-  "language": "detected language",
-  "translation": "translated text"
-}
-
-Message:
-${safeMessage}
-`.trim();
-
-			const parsed = await generateKaruJson<{
-				language?: string;
-				translation?: string;
-			}>({
-				model: "gemma-4-26b-a4b-it",
-				contents: prompt,
-				config: {
-					temperature: 0.1,
-					maxOutputTokens: 250,
-					topP: 0.8,
-					topK: 20,
-				},
-			});
-
-			const detectedLang =
-				parsed.language?.trim() ||
-				"Unknown";
-
-			const translated =
-				parsed.translation?.trim();
+			const { detectedLang, translated } =
+				await translateMessage({
+					targetLang,
+					safeMessage,
+				});
 
 			if (!translated) {
 				throw new Error(

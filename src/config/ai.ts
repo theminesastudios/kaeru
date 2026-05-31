@@ -6,6 +6,51 @@ export const KARU_AI = new GoogleGenAI({
 	apiKey: process.env.KARU_API_KEY!,
 });
 
+type KaruGenerateResponse = {
+	text?: string | (() => string | undefined);
+	candidates?: Array<{
+		content?: {
+			parts?: Array<{
+				text?: string;
+				thought?: boolean;
+			}>;
+		};
+		finishReason?: string;
+	}>;
+	promptFeedback?: unknown;
+};
+
+function readKaruResponseText(response: unknown): string {
+	const typedResponse = response as KaruGenerateResponse;
+	const directText =
+		typeof typedResponse.text === "function"
+			? typedResponse.text()
+			: typedResponse.text;
+
+	if (directText?.trim()) {
+		return directText.trim();
+	}
+
+	const partsText = typedResponse.candidates
+		?.flatMap((candidate) => candidate.content?.parts || [])
+		.filter((part) => !part.thought)
+		?.map((part) => part.text)
+		.filter((partText): partText is string => Boolean(partText))
+		.join("");
+
+	return partsText?.trim() || "";
+}
+
+function describeKaruResponse(response: unknown): string {
+	const typedResponse = response as KaruGenerateResponse;
+	const finishReason =
+		typedResponse.candidates?.[0]?.finishReason || "none";
+	const partCount =
+		typedResponse.candidates?.[0]?.content?.parts?.length || 0;
+
+	return `finishReason=${finishReason}, candidates=${typedResponse.candidates?.length || 0}, parts=${partCount}, promptFeedback=${JSON.stringify(typedResponse.promptFeedback || null)}`;
+}
+
 export async function generateKaruText({
 	model,
 	contents,
@@ -26,7 +71,14 @@ export async function generateKaruText({
 				config,
 			});
 
-			return response.text?.trim() || "";
+			const text = readKaruResponseText(response);
+			if (text) {
+				return text;
+			}
+
+			throw new Error(
+				`Empty AI response from ${modelName}: ${describeKaruResponse(response)}`,
+			);
 		} catch (error) {
 			lastError = error;
 		}
@@ -128,7 +180,7 @@ function extractJsonCandidates(raw: string): string[] {
 
 function extractQuotedField(raw: string, key: string): string | undefined {
 	const keyPattern = new RegExp(
-		`(?:[\"']${key}[\"']|${key})\s*:\s*`,
+		`(?:["']${key}["']|${key})\\s*:\\s*`,
 		"i",
 	);
 	const match = raw.match(keyPattern);
