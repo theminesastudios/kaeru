@@ -25,6 +25,10 @@ const ticketSetupModal: InteractionModal = {
 
 		const description = interaction.getTextFieldValue("description");
 		const staffRoleId = interaction.getSelectMenuValues("staff-role")?.[0];
+		const staffPingMode =
+			interaction.getSelectMenuValues("staff-ping-mode")?.[0] === "random"
+				? "random"
+				: "role";
 		const bannerUrl = interaction.getAttachment("banner_url")?.url;
 		const channelId = interaction.getSelectMenuValues("channel")?.[0];
 
@@ -45,6 +49,7 @@ const ticketSetupModal: InteractionModal = {
 					existingData.description ||
 					"Create a ticket to get support from our staff.",
 				pingRoleId: staffRoleId || existingData.pingRoleId,
+				staffPingMode,
 				bannerUrl: bannerUrl || existingData.bannerUrl,
 				ticketChannelId: channelId,
 				status: "active",

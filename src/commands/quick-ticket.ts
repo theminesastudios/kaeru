@@ -14,6 +14,10 @@ import type {
 import { db } from "../utils/database.ts";
 import { fetchDiscord } from "../utils/discord.ts";
 import { getEmoji, sendAlertMessage } from "../utils/index.ts";
+import {
+	assignRandomStaffMember,
+	buildTicketManagementRowsJson,
+} from "../utils/ticketControls.ts";
 
 const GUILD_TEXT_CHANNEL = 0;
 const PRIVATE_THREAD = 12;
@@ -112,6 +116,18 @@ const quickTicket: InteractionCommand = {
 			const quotedMessage = formatQuotedMessage(message.content);
 			const messageUrl = `https://discord.com/channels/${guildId}/${message.channel_id}/${message.id}`;
 			const authorName = message.author?.username ?? "Unknown";
+			const guildData = await db.get(`guild:${guildId}`).catch(() => null);
+			const staffRoleId =
+				typeof guildData?.pingRoleId === "string" ? guildData.pingRoleId : null;
+			const staffPingMode = guildData?.staffPingMode === "random" ? "random" : "role";
+			const initialClaim =
+				staffPingMode === "random"
+					? await assignRandomStaffMember({
+							guildId,
+							threadId: thread.id,
+							staffRoleId,
+						})
+					: null;
 
 			await fetchDiscord(
 				`/channels/${thread.id}/messages`,
@@ -132,23 +148,19 @@ const quickTicket: InteractionCommand = {
 										quotedMessage ? `> ${quotedMessage}` : "> -# No readable text content.",
 										`> -# Jump to [message](${messageUrl})`,
 										`- Message sent by __@${authorName}__`,
+										staffPingMode === "role" && staffRoleId
+											? `-# [ <@&${staffRoleId}> ]`
+											: "",
+										initialClaim?.claimedById
+											? `- Assigned to <@${initialClaim.claimedById}>`
+											: "",
 										"",
 										"-# Use /close in this thread when it is resolved.",
 									].join("\n"),
 								),
 							)
 							.toJSON(),
-						{
-							type: 1,
-							components: [
-								{
-									type: 2,
-									custom_id: "ticket:invite_creator",
-									style: 2,
-									label: "Invite Creator",
-								},
-							],
-						},
+						...buildTicketManagementRowsJson(),
 					],
 					flags: InteractionFlags.IsComponentsV2,
 				},
@@ -167,6 +179,9 @@ const quickTicket: InteractionCommand = {
 					status: "open",
 					sourceMessageId: message.id,
 					sourceChannelId: message.channel_id,
+					...(staffRoleId ? { staffRoleId } : {}),
+					staffPingMode,
+					...(initialClaim || {}),
 				}),
 				db.set(`thread:${thread.id}`, {
 					ticketId,

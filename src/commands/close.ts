@@ -9,6 +9,7 @@ import type { CommandInteraction, InteractionCommand } from "@minesa-org/mini-in
 import { db } from "../utils/database.ts";
 import { fetchDiscord } from "../utils/discord.ts";
 import { getEmoji, sendAlertMessage } from "../utils/index.ts";
+import { clearActiveTicket } from "../utils/ticketControls.ts";
 
 const closeCommand: InteractionCommand = {
 	data: new CommandBuilder()
@@ -129,13 +130,7 @@ const closeCommand: InteractionCommand = {
 					console.error("Error archiving thread:", archiveError);
 				}
 
-				const updatedUserData: any = {
-					...userTicketData,
-					activeTicketId: null,
-				};
-				delete updatedUserData.createdAt;
-				delete updatedUserData.updatedAt;
-				await db.set(`user:${user.id}`, updatedUserData);
+				await clearActiveTicket(ticketData);
 
 				try {
 					const cooldownDuration = 30 * 60 * 1000;
@@ -229,14 +224,7 @@ const closeCommand: InteractionCommand = {
 				{ locked: true, archived: true },
 			);
 
-			const userKey = `user:${ticketData.userId}`;
-			const userData = await db.get(userKey);
-			if (userData) {
-				const updatedUserData: any = { ...userData, activeTicketId: null };
-				delete updatedUserData.createdAt;
-				delete updatedUserData.updatedAt;
-				await db.set(userKey, updatedUserData);
-			}
+			await clearActiveTicket(ticketData);
 
 			try {
 				const dmChannel = await fetchDiscord(

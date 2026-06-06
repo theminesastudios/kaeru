@@ -4,87 +4,44 @@ import {
 	ButtonStyle,
 	ContainerBuilder,
 	InteractionFlags,
-	StringSelectMenuBuilder,
-	StringSelectMenuOptionBuilder,
+	LabelBuilder,
+	ModalBuilder,
 	TextDisplayBuilder,
+	TextInputBuilder,
+	TextInputStyle,
 } from "@minesa-org/mini-interaction";
 import type { MessageActionRowComponent } from "@minesa-org/mini-interaction";
 import { db } from "./database.ts";
 import { fetchDiscord } from "./discord.ts";
 import { getEmoji } from "./emojis.ts";
 
-export async function showCreateServerSelect(interaction: any, user: any) {
-	let userTicketData;
-	try {
-		userTicketData = await db.get(`user:${user.id}`);
-	} catch (dbError) {
-		console.error("Database error getting user ticket data:", dbError);
-		userTicketData = null;
-	}
+type DiscordGuild = {
+	id: string;
+	name: string;
+};
 
-	if (userTicketData?.activeTicketId) {
-		let existingTicket;
-		try {
-			existingTicket = await db.get(`ticket:${userTicketData.activeTicketId}`);
-		} catch (dbError) {
-			console.error("Database error getting ticket data:", dbError);
-			existingTicket = null;
-		}
-
-		if (existingTicket?.status === "open") {
-			const container = new ContainerBuilder()
-				.addComponent(
-					new TextDisplayBuilder().setContent(
-						`## ${getEmoji("error")} You already have an open ticket!`,
-					),
-				)
-				.addComponent(
-					new TextDisplayBuilder().setContent(
-						"Please use </send:1477601535692247294> in DMs to communicate with staff.",
-					),
-				);
-
-			return interaction.editReply({
-				components: [container],
-			});
-		}
-	}
-
-	let userData;
-	try {
-		userData = await db.get(user.id);
-	} catch (dbError) {
-		console.error("Database error getting user data:", dbError);
-		userData = null;
-	}
+export async function getMutualGuildsForUser(userId: string) {
+	const userData = await db.get(userId).catch(() => null);
 
 	if (!userData?.accessToken) {
-		return interaction.editReply({
-			components: [buildAuthorizationContainer(false)],
-		});
+		return {
+			ok: false,
+			reauthorize: false,
+			userData,
+			guilds: [] as DiscordGuild[],
+			selectedGuild: null,
+		};
 	}
 
 	try {
-		let userGuilds;
-		try {
-			userGuilds = await fetchDiscord(
-				"/users/@me/guilds",
-				userData.accessToken as string,
-				false,
-				"GET",
-				null,
-				5000,
-			);
-		} catch (userError: any) {
-			if (userError.message?.includes("401")) {
-				return interaction.editReply({
-					components: [buildAuthorizationContainer(true)],
-				});
-			}
-
-			throw userError;
-		}
-
+		const userGuilds = await fetchDiscord(
+			"/users/@me/guilds",
+			userData.accessToken as string,
+			false,
+			"GET",
+			null,
+			5000,
+		);
 		const botGuilds = await fetchDiscord(
 			"/users/@me/guilds",
 			process.env.DISCORD_BOT_TOKEN!,
@@ -93,83 +50,103 @@ export async function showCreateServerSelect(interaction: any, user: any) {
 			null,
 			5000,
 		);
-
-		const mutualGuilds = userGuilds.filter((ug: any) =>
-			botGuilds.some((bg: any) => bg.id === ug.id),
+		const mutualGuilds = userGuilds.filter((userGuild: DiscordGuild) =>
+			botGuilds.some((botGuild: DiscordGuild) => botGuild.id === userGuild.id),
 		);
 
-		if (mutualGuilds.length === 0) {
-			const container = new ContainerBuilder()
-				.addComponent(
-					new TextDisplayBuilder().setContent(
-						`## ${getEmoji("error")} No mutual servers found`,
-					),
-				)
-				.addComponent(
-					new TextDisplayBuilder().setContent(
-						"Make sure the bot is invited to the servers you are in.",
-					),
-				);
-
-			return interaction.editReply({
-				components: [container],
-			});
+		return {
+			ok: true,
+			reauthorize: false,
+			userData,
+			guilds: mutualGuilds as DiscordGuild[],
+		};
+	} catch (error: any) {
+		if (error.message?.includes("401")) {
+			return {
+				ok: false,
+				reauthorize: true,
+				userData,
+				guilds: [] as DiscordGuild[],
+				selectedGuild: null,
+			};
 		}
 
-		const menu = new ActionRowBuilder<MessageActionRowComponent>()
-			.addComponents(
-				new StringSelectMenuBuilder()
-					.setCustomId("create:select_server")
-					.setPlaceholder("Select a server to create a thread")
-					.addOptions(
-						...mutualGuilds
-							.slice(0, 25)
-							.map((guild: any) =>
-								new StringSelectMenuOptionBuilder()
-									.setLabel(guild.name)
-									.setValue(guild.id),
-							),
-					),
-			);
-
-		const container = new ContainerBuilder()
-			.addComponent(
-				new TextDisplayBuilder().setContent(
-					`## ${getEmoji("sharedwithu")} Creating a ticketmail`,
-				),
-			)
-			.addComponent(
-				new TextDisplayBuilder().setContent(
-					"Please select a server where you want to open a ticketmail from the dropdown below.",
-				),
-			)
-			.addComponent(menu);
-
-		return interaction.editReply({
-			components: [container],
-		});
-	} catch (error) {
-		console.error("Error preparing /create server select:", error);
-
-		const container = new ContainerBuilder()
-			.addComponent(
-				new TextDisplayBuilder().setContent(
-					`## ${getEmoji("error")} Could not fetch your servers`,
-				),
-			)
-			.addComponent(
-				new TextDisplayBuilder().setContent(
-					"An error occurred while fetching your servers. Please try again later.",
-				),
-			);
-
-		return interaction.editReply({
-			components: [container],
-		});
+		throw error;
 	}
 }
 
-function buildAuthorizationContainer(reauthorize: boolean) {
+export async function getCreateServerAutocompleteChoices(
+	userId: string,
+	query: string,
+) {
+	const result = await getMutualGuildsForUser(userId).catch(() => null);
+	if (!result?.ok) {
+		return [];
+	}
+
+	const normalizedQuery = query.trim().toLowerCase();
+	return result.guilds
+		.filter((guild) => guild.name.toLowerCase().includes(normalizedQuery))
+		.slice(0, 25)
+		.map((guild) => ({
+			name: guild.name.slice(0, 100),
+			value: guild.id,
+		}));
+}
+
+export async function resolveCreateGuildSelection(userId: string, guildId: string) {
+	const result = await getMutualGuildsForUser(userId);
+	if (!result.ok) {
+		return result;
+	}
+
+	const guild = result.guilds.find((mutualGuild) => mutualGuild.id === guildId);
+	return {
+		...result,
+		selectedGuild: guild ?? null,
+	};
+}
+
+export async function storePendingTicketCreate({
+	userId,
+	guildId,
+	guildName,
+	messageInteractionToken,
+}: {
+	userId: string;
+	guildId: string;
+	guildName: string;
+	messageInteractionToken?: string;
+}) {
+	await db.set(`pendingTicketCreate:${userId}`, {
+		guildId,
+		guildName,
+		...(messageInteractionToken ? { messageInteractionToken } : {}),
+		createdAt: Date.now(),
+	});
+}
+
+export function buildCreateIssueModal(guildName: string) {
+	return new ModalBuilder()
+		.setCustomId("create:issue_modal")
+		.setTitle("Create a ticket")
+		.addComponents(
+			new LabelBuilder()
+				.setLabel("Describe your issue")
+				.setDescription(`Minimum 25 characters for ${guildName}`.slice(0, 100))
+				.setComponent(
+					new TextInputBuilder()
+						.setCustomId("issue_description")
+						.setPlaceholder("Explain what happened, what you expected, and any relevant details.")
+						.setStyle(TextInputStyle.Paragraph)
+						.setMinLength(25)
+						.setMaxLength(4000)
+						.setRequired(true),
+				),
+		);
+}
+
+export function buildAuthorizationContainer(reauthorize: boolean) {
 	const oauthUrl = `https://discord.com/oauth2/authorize?client_id=${
 		process.env.DISCORD_APPLICATION_ID
 	}&response_type=code&redirect_uri=${encodeURIComponent(

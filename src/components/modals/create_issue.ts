@@ -8,8 +8,18 @@ import type {
 	ModalSubmitInteraction,
 } from "@minesa-org/mini-interaction";
 import { db } from "../../utils/database.ts";
+import {
+	buildAuthorizationContainer,
+	resolveCreateGuildSelection,
+} from "../../utils/createTicketFlow.ts";
 import { fetchDiscord, getOrCreateWebhookUrl } from "../../utils/discord.ts";
 import { getEmoji } from "../../utils/index.ts";
+import {
+	addActiveTicketForUser,
+	assignRandomStaffMember,
+	buildTicketManagementRowsJson,
+	validateTicketCreateLimit,
+} from "../../utils/ticketControls.ts";
 import { summarizeTicketTitle } from "../../utils/ticketTitle.ts";
 
 const MIN_DESCRIPTION_LENGTH = 25;
@@ -93,38 +103,44 @@ const createIssueModal: InteractionModal = {
 				});
 			}
 
+			const selectedGuild = await resolveCreateGuildSelection(user.id, guildId);
+			if (!selectedGuild.ok) {
+				return interaction.editReply({
+					components: [buildAuthorizationContainer(selectedGuild.reauthorize).toJSON()],
+				});
+			}
+
+			if (!selectedGuild.selectedGuild) {
+				return interaction.editReply({
+					components: [
+						buildErrorContainer(
+							"That server could not be found in your mutual server list. Please run `/create` again and select a server from autocomplete.",
+						).toJSON(),
+					],
+				});
+			}
+
 			const [userTicketData, guildData, counterData] = await Promise.all([
 				db.get(`user:${user.id}`),
 				db.get(`guild:${guildId}`),
 				db.get(`counter:${guildId}`),
 			]);
 
-			if (userTicketData?.activeTicketId) {
-				const existingTicket = await db.get(
-					`ticket:${userTicketData.activeTicketId}`,
-				);
-
-				if (existingTicket?.status === "open") {
-					const container = new ContainerBuilder()
-						.addComponent(
-							new TextDisplayBuilder().setContent(
-								`## ${getEmoji("error")} You already have an open ticket!`,
-							),
-						)
-						.addComponent(
-							new TextDisplayBuilder().setContent(
-								`Please use </send:1477601535692247294> in DMs to continue.\n\nYour ticket: <#${existingTicket.threadId}>`,
-							),
-						);
-
-					return interaction.editReply({
-						components: [container.toJSON()],
-					});
-				}
+			const limitCheck = await validateTicketCreateLimit(user.id, guildId);
+			if (!limitCheck.ok) {
+				return interaction.editReply({
+					components: [
+						buildErrorContainer(
+							limitCheck.message || "You cannot create another ticket right now.",
+						).toJSON(),
+					],
+				});
 			}
 
 			let guildName =
-				typeof guildData?.guildName === "string" ? guildData.guildName : null;
+				typeof guildData?.guildName === "string"
+					? guildData.guildName
+					: selectedGuild.selectedGuild.name;
 			let systemChannelId =
 				typeof guildData?.systemChannelId === "string"
 					? guildData.systemChannelId
@@ -185,11 +201,22 @@ const createIssueModal: InteractionModal = {
 			);
 
 			const ticketId = Date.now().toString();
+			const staffRoleId =
+				typeof guildData?.pingRoleId === "string" ? guildData.pingRoleId : null;
+			const staffPingMode = guildData?.staffPingMode === "random" ? "random" : "role";
 			const pingMention = guildData?.pingRoleId
 				? `<@&${guildData.pingRoleId}>`
 				: "@here";
 			let webhookUrl =
 				typeof guildData?.webhookUrl === "string" ? guildData.webhookUrl : null;
+			const initialClaim =
+				staffPingMode === "random"
+					? await assignRandomStaffMember({
+							guildId,
+							threadId: thread.id,
+							staffRoleId,
+						})
+					: null;
 
 			const starterMessage = fetchDiscord(
 				`/channels/${thread.id}/messages`,
@@ -207,31 +234,17 @@ const createIssueModal: InteractionModal = {
 									type: 10,
 									content:
 										`## ${getEmoji("ticket.create")} New Ticket #${caseNumber} - ${ticketTitle}\n` +
-										`-# [ ${pingMention} ]\n\n**Created by:** ${user.username}`,
+										`-# [ ${initialClaim?.claimedById ? `<@${initialClaim.claimedById}>` : pingMention} ]\n\n` +
+										`**Created by:** ${user.username}`,
 								},
 								{
 									type: 10,
 									content:
 										"-# Please assist this user with their inquiry using </send:1477601535692247294>.",
 								},
-								{
-									type: 10,
-									content:
-										"-# Use the button below if you want to invite the ticket creator into this thread.",
-								},
 							],
 						},
-						{
-							type: 1,
-							components: [
-								{
-									type: 2,
-									custom_id: "ticket:invite_creator",
-									style: 2,
-									label: "Invite Creator",
-								},
-							],
-						},
+						...buildTicketManagementRowsJson(),
 					],
 					flags: 32768,
 				},
@@ -267,6 +280,9 @@ const createIssueModal: InteractionModal = {
 					ticketId,
 					caseNumber,
 					guildId,
+					...(guildName ? { guildName } : {}),
+					...(staffRoleId ? { staffRoleId } : {}),
+					staffPingMode,
 					channelId: targetChannelId,
 					userId: user.id,
 					username: user.username,
@@ -274,14 +290,16 @@ const createIssueModal: InteractionModal = {
 					title: ticketTitle,
 					description,
 					status: "open",
+					...(initialClaim || {}),
 				}),
 				db.set(`thread:${thread.id}`, {
 					ticketId,
 				}),
-				db.set(`user:${user.id}`, {
-					...(userTicketData || {}),
-					activeTicketId: ticketId,
+				addActiveTicketForUser({
+					userId: user.id,
 					guildId,
+					ticketId,
+					userTicketData,
 				}),
 				db.delete(`pendingTicketCreate:${user.id}`),
 			]);

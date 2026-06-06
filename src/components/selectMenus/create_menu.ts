@@ -1,9 +1,3 @@
-import {
-	LabelBuilder,
-	ModalBuilder,
-	TextInputBuilder,
-	TextInputStyle,
-} from "@minesa-org/mini-interaction";
 import type {
 	InteractionComponent,
 	MessageComponentInteraction,
@@ -11,6 +5,10 @@ import type {
 } from "@minesa-org/mini-interaction";
 import { db } from "../../utils/database.ts";
 import { fetchDiscord } from "../../utils/discord.ts";
+import {
+	buildCreateIssueModal,
+	storePendingTicketCreate,
+} from "../../utils/createTicketFlow.ts";
 
 const createMenuHandler: InteractionComponent = {
 	customId: "create:select_server",
@@ -49,32 +47,14 @@ const createMenuHandler: InteractionComponent = {
 			console.warn(`[Kaeru] Could not resolve guild name for ${guildId}:`, error);
 		}
 
-		await db.set(`pendingTicketCreate:${user.id}`, {
+		await storePendingTicketCreate({
+			userId: user.id,
 			guildId,
 			guildName,
 			messageInteractionToken: selectInteraction.token,
-			createdAt: Date.now(),
 		});
 
-		const modal = new ModalBuilder()
-			.setCustomId("create:issue_modal")
-			.setTitle(`Create a ticket`)
-			.addComponents(
-				new LabelBuilder()
-					.setLabel("Describe your issue")
-					.setDescription(`Minimum 25 characters for ${guildName}`.slice(0, 100))
-					.setComponent(
-						new TextInputBuilder()
-							.setCustomId("issue_description")
-							.setPlaceholder("Explain what happened, what you expected, and any relevant details.")
-							.setStyle(TextInputStyle.Paragraph)
-							.setMinLength(25)
-							.setMaxLength(4000)
-							.setRequired(true),
-					),
-			);
-
-		return selectInteraction.showModal(modal);
+		return selectInteraction.showModal(buildCreateIssueModal(guildName));
 	},
 };
 

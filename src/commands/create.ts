@@ -8,8 +8,8 @@ import type {
 	InteractionCommand,
 } from "@minesa-org/mini-interaction";
 import {
-	deferCreateReply,
-	showCreateServerSelect,
+	buildCreateIssueModal,
+	storePendingTicketCreate,
 } from "../utils/createTicketFlow.ts";
 import { sendAlertMessage } from "../utils/index.ts";
 
@@ -21,7 +21,14 @@ const createCommand: InteractionCommand = {
 		.setIntegrationTypes([
 			IntegrationType.UserInstall,
 			IntegrationType.GuildInstall,
-		]),
+		])
+		.addStringOption((option) =>
+			option
+				.setName("server")
+				.setDescription("Server to create the ticket in")
+				.setRequired(true)
+				.setAutocomplete(true),
+		),
 
 	handler: async (interaction: CommandInteraction) => {
 		const user = interaction.user ?? interaction.member?.user;
@@ -34,8 +41,15 @@ const createCommand: InteractionCommand = {
 			});
 		}
 
-		await deferCreateReply(interaction);
-		return showCreateServerSelect(interaction, user);
+		const guildId = interaction.options.getString("server", true)!;
+
+		await storePendingTicketCreate({
+			userId: user.id,
+			guildId,
+			guildName: "selected server",
+		});
+
+		return interaction.showModal(buildCreateIssueModal("selected server"));
 	},
 };
 

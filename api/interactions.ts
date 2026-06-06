@@ -7,8 +7,9 @@ import {
 } from "discord-api-types/v10";
 import {
 	getTranslationLanguageChoices,
-	type TranslationLanguageChoice,
 } from "../src/utils/translationLanguages.js";
+import { getCreateServerAutocompleteChoices } from "../src/utils/createTicketFlow.js";
+import { getActiveTicketAutocompleteChoices } from "../src/utils/ticketControls.js";
 
 type HeaderMap =
 	| Record<string, string | string[] | undefined>
@@ -81,7 +82,7 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
 		});
 
 		if (interaction.type === InteractionType.ApplicationCommandAutocomplete) {
-			sendJson(res, 200, handleAutocomplete(interaction));
+			sendJson(res, 200, await handleAutocomplete(interaction));
 			return;
 		}
 	} catch (error) {
@@ -99,9 +100,9 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
 
 function handleAutocomplete(
 	interaction: APIApplicationCommandAutocompleteInteraction,
-): APIInteractionResponse {
+): APIInteractionResponse | Promise<APIInteractionResponse> {
 	if (!["çevir", "translate"].includes(interaction.data.name)) {
-		return autocompleteResponse([]);
+		return handleTicketAutocomplete(interaction);
 	}
 
 	const focusedOption = findFocusedOption(interaction.data.options);
@@ -114,7 +115,40 @@ function handleAutocomplete(
 	);
 }
 
-function autocompleteResponse(choices: TranslationLanguageChoice[]): APIInteractionResponse {
+async function handleTicketAutocomplete(
+	interaction: APIApplicationCommandAutocompleteInteraction,
+): Promise<APIInteractionResponse> {
+	const focusedOption = findFocusedOption(interaction.data.options);
+	const user = interaction.user ?? interaction.member?.user;
+
+	if (!focusedOption || !user) {
+		return autocompleteResponse([]);
+	}
+
+	if (interaction.data.name === "create" && focusedOption.name === "server") {
+		return autocompleteResponse(
+			await getCreateServerAutocompleteChoices(
+				user.id,
+				String(focusedOption.value ?? ""),
+			),
+		);
+	}
+
+	if (interaction.data.name === "switch-ticket" && focusedOption.name === "ticket") {
+		return autocompleteResponse(
+			await getActiveTicketAutocompleteChoices(
+				user.id,
+				String(focusedOption.value ?? ""),
+			),
+		);
+	}
+
+	return autocompleteResponse([]);
+}
+
+function autocompleteResponse(
+	choices: Array<{ name: string; value: string }>,
+): APIInteractionResponse {
 	return {
 		type: InteractionResponseType.ApplicationCommandAutocompleteResult,
 		data: {

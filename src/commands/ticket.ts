@@ -8,6 +8,8 @@ import {
 	LabelBuilder,
 	ModalRoleSelectMenuBuilder,
 	ModalChannelSelectMenuBuilder,
+	ModalStringSelectMenuBuilder,
+	StringSelectMenuOptionBuilder,
 	InteractionFlags,
 	ContainerBuilder,
 	TextDisplayBuilder,
@@ -96,6 +98,29 @@ const ticketCommand: InteractionCommand = {
 								.setMaxValues(1),
 						),
 					new LabelBuilder()
+						.setLabel("Staff Ping Mode")
+						.setDescription("Choose who gets notified when a ticket is created")
+						.setComponent(
+							new ModalStringSelectMenuBuilder()
+								.setCustomId("staff-ping-mode")
+								.setPlaceholder("Select notification mode")
+								.setMinValues(1)
+								.setMaxValues(1)
+								.setRequired(true)
+								.addOptions(
+									new StringSelectMenuOptionBuilder()
+										.setLabel("Ping staff role")
+										.setDescription("Mention the whole configured staff role")
+										.setValue("role")
+										.setDefault(guildData.staffPingMode !== "random"),
+									new StringSelectMenuOptionBuilder()
+										.setLabel("Ping random staff member")
+										.setDescription("Pick one member from the staff role")
+										.setValue("random")
+										.setDefault(guildData.staffPingMode === "random"),
+								),
+						),
+					new LabelBuilder()
 						.setLabel("Banner Image")
 						.setDescription("Optional image displayed at the top")
 						.setComponent(
@@ -128,6 +153,7 @@ const ticketCommand: InteractionCommand = {
 				.addComponent(
 					new TextDisplayBuilder().setContent(
 						`- **Staff Role:** ${guildData.pingRoleId ? `<@&${guildData.pingRoleId}>` : "None set (pings @here)"}\n` +
+						`- **Staff Ping Mode:** ${guildData.staffPingMode === "random" ? "Random staff member" : "Staff role"}\n` +
 						`- **Ticket Channel:** ${guildData.ticketChannelId ? `<#${guildData.ticketChannelId}>` : "Default system channel"}\n` +
 						`- **Banner URL:** ${guildData.bannerUrl ? `[Link](${guildData.bannerUrl})` : "None"}\n\n` +
 						`**Description:**\n${guildData.description || "Default description"}`,
@@ -146,6 +172,7 @@ const ticketCommand: InteractionCommand = {
 					guildId: guild.id,
 					guildName: (guild as any).name,
 					systemChannelId: (guild as any).system_channel_id,
+					staffPingMode: "role",
 					status: "active",
 				};
 				await db.set(`guild:${guild.id}`, resetData);

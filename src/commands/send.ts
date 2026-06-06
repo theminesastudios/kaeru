@@ -7,9 +7,9 @@ import {
 	ContainerBuilder,
 	IntegrationType,
 	InteractionFlags,
-	MiniPermFlags,
 	TextDisplayBuilder,
 } from "@minesa-org/mini-interaction";
+import type { APIAttachment } from "discord-api-types/v10";
 import type {
 	CommandInteraction,
 	InteractionCommand,
@@ -17,6 +17,11 @@ import type {
 } from "@minesa-org/mini-interaction";
 import { db } from "../utils/database.ts";
 import { getEmoji, getOrCreateWebhookUrl, sendAlertMessage } from "../utils/index.ts";
+import {
+	canUseTicketStaffControls,
+	getUserOpenTickets,
+	isTicketOpen,
+} from "../utils/ticketControls.ts";
 
 function buildSentMessageContainer(content: string, footer: string) {
 	return new ContainerBuilder()
@@ -32,7 +37,6 @@ const sendCommand: InteractionCommand = {
 	data: new CommandBuilder()
 		.setName("send")
 		.setDescription("Send a message to the ticket system")
-		.setDefaultMemberPermissions(MiniPermFlags.ManageThreads)
 		.setContexts([CommandContext.Guild, CommandContext.Bot])
 		.setIntegrationTypes([
 			IntegrationType.GuildInstall,
@@ -43,6 +47,12 @@ const sendCommand: InteractionCommand = {
 				.setName("content")
 				.setDescription("The message content")
 				.setRequired(true),
+		)
+		.addAttachmentOption((option) =>
+			option
+				.setName("attachment")
+				.setDescription("Optional file to include with the message")
+				.setRequired(false),
 		),
 
 	handler: async (interaction: CommandInteraction) => {
@@ -61,7 +71,9 @@ const sendCommand: InteractionCommand = {
 			flags: InteractionFlags.IsComponentsV2,
 		});
 
-		const content = options.getString("content")!;
+		const content = options.getString("content", true)!.trim();
+		const attachment = options.getAttachment("attachment");
+		const sendContent = buildForwardedContent(content, attachment);
 
 		try {
 			const isDM = !interaction.guild_id;
@@ -108,15 +120,8 @@ const sendCommand: InteractionCommand = {
 					});
 				}
 
-				let userTicketData;
-				try {
-					userTicketData = await db.get(`user:${user.id}`);
-				} catch (dbError) {
-					console.error("Database error getting user ticket data:", dbError);
-					userTicketData = null;
-				}
-
-				if (!userTicketData || !userTicketData.activeTicketId) {
+				const userTickets = await getUserOpenTickets(user.id);
+				if (!userTickets.currentTicketId) {
 					return sendAlertMessage({
 						interaction,
 						content: `**You don't have an active ticket.**\n\nIf you need assistance, please use </create:1477209072800632845> in a mutual server first.\n\n-# If you are staff, please use this command inside a ticket thread.`,
@@ -124,12 +129,22 @@ const sendCommand: InteractionCommand = {
 					});
 				}
 
-				const ticketData = await db.get(`ticket:${userTicketData.activeTicketId}`);
+				const ticketData = userTickets.tickets.find(
+					(ticket) => ticket.ticketId === userTickets.currentTicketId,
+				);
 
-				if (!ticketData || ticketData.status !== "open") {
+				if (!isTicketOpen(ticketData)) {
 					return sendAlertMessage({
 						interaction,
 						content: "Your ticket is not active or doesn't exist.",
+						type: "error",
+					});
+				}
+
+				if (ticketData.locked) {
+					return sendAlertMessage({
+						interaction,
+						content: "Your ticket is locked by staff right now. Please wait for staff to reopen it before sending more messages.",
 						type: "error",
 					});
 				}
@@ -138,14 +153,15 @@ const sendCommand: InteractionCommand = {
 				let webhookUrl = guildData?.webhookUrl;
 
 				let webhookWorked = false;
-				const dmToTicketFooter = `-# Message sent to ticket ${getEmoji("reply")}`;
+				const dmToTicketAckFooter =
+					`-# ${getEmoji("reply")} Sent from your DM`;
 
 				const sendWebhookMessage = async (url: string) => {
 					return await fetch(`${url}?thread_id=${ticketData.threadId}`, {
 						method: "POST",
 						headers: { "Content-Type": "application/json" },
 						body: JSON.stringify({
-							content: content,
+							content: sendContent,
 							username: user.username,
 							avatar_url: user.avatar
 								? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`
@@ -174,7 +190,7 @@ const sendCommand: InteractionCommand = {
 							webhookWorked = true;
 							return interaction.editReply({
 								components: [
-									buildSentMessageContainer(content, dmToTicketFooter).toJSON(),
+									buildSentMessageContainer(sendContent, dmToTicketAckFooter).toJSON(),
 								],
 							});
 						}
@@ -196,7 +212,7 @@ const sendCommand: InteractionCommand = {
 									webhookWorked = true;
 									return interaction.editReply({
 										components: [
-											buildSentMessageContainer(content, dmToTicketFooter).toJSON(),
+											buildSentMessageContainer(sendContent, dmToTicketAckFooter).toJSON(),
 										],
 									});
 								}
@@ -219,18 +235,7 @@ const sendCommand: InteractionCommand = {
 								components: [
 									{
 										type: 10,
-										content: content,
-									},
-									{
-										type: 17,
-										accent_color: null,
-										spoiler: false,
-										components: [
-											{
-												type: 10,
-												content: dmToTicketFooter,
-											},
-										],
+										content: sendContent,
 									},
 								],
 							}),
@@ -242,7 +247,7 @@ const sendCommand: InteractionCommand = {
 					}
 				}
 
-				const container = buildSentMessageContainer(content, dmToTicketFooter);
+				const container = buildSentMessageContainer(sendContent, dmToTicketAckFooter);
 
 				return interaction.editReply({
 					components: [container],
@@ -266,7 +271,7 @@ const sendCommand: InteractionCommand = {
 				}
 
 				const ticketData = await db.get(`ticket:${threadData.ticketId}`);
-				if (!ticketData || ticketData.status !== "open") {
+				if (!isTicketOpen(ticketData)) {
 					return sendAlertMessage({
 						interaction,
 						content: "This ticket is not active or doesn't exist.",
@@ -274,7 +279,20 @@ const sendCommand: InteractionCommand = {
 					});
 				}
 
+				const staffCheck = await canUseTicketStaffControls(interaction, ticketData);
+				if (!staffCheck.ok) {
+					return sendAlertMessage({
+						interaction,
+						content: staffCheck.message || "Only staff can send messages from ticket threads.",
+						type: "error",
+					});
+				}
+
 				try {
+					const staffToUserDmFooter =
+						`-# ${getEmoji("seal")} Staff ${formatTicketShortLabel(ticketData)} -> your DM`;
+					const staffToUserAckFooter =
+						`-# ${getEmoji("seal")} Sent to @${ticketData.username}`;
 					const dmResponse = await fetch(
 						`https://discord.com/api/v10/users/@me/channels`,
 						{
@@ -306,7 +324,7 @@ const sendCommand: InteractionCommand = {
 								components: [
 									{
 										type: 10,
-										content: content,
+										content: sendContent,
 									},
 									{
 										type: 17,
@@ -315,7 +333,7 @@ const sendCommand: InteractionCommand = {
 										components: [
 											{
 												type: 10,
-												content: `-# Replied by staff ${getEmoji("seal")}`,
+												content: staffToUserDmFooter,
 											},
 										],
 									},
@@ -330,8 +348,8 @@ const sendCommand: InteractionCommand = {
 					}
 
 					const container = buildSentMessageContainer(
-						content,
-						"-# Response sent to user via DM.",
+						sendContent,
+						staffToUserAckFooter,
 					);
 
 					return interaction.editReply({
@@ -358,3 +376,23 @@ const sendCommand: InteractionCommand = {
 };
 
 export default sendCommand;
+
+function buildForwardedContent(content: string, attachment: APIAttachment | null) {
+	const attachmentUrl = attachment?.url || attachment?.proxy_url;
+	const parts: string[] = [];
+
+	if (content) {
+		parts.push(content);
+	}
+
+	if (attachmentUrl) {
+		const filename = attachment.filename || "attachment";
+		parts.push(`[${filename}](${attachmentUrl})`);
+	}
+
+	return parts.join("\n").trim();
+}
+
+function formatTicketShortLabel(ticketData: Record<string, any>) {
+	return ticketData.caseNumber ? `#${ticketData.caseNumber}` : "ticket";
+}
