@@ -8,6 +8,7 @@ import {
 	TextDisplayBuilder,
 } from "@minesa-org/mini-interaction";
 import type { MessageActionRowComponent } from "@minesa-org/mini-interaction";
+import { randomInt } from "node:crypto";
 import { db } from "./database.ts";
 import { fetchDiscord } from "./discord.ts";
 import { getEmoji, getEmojiData } from "./emojis.ts";
@@ -394,7 +395,7 @@ export async function getRandomStaffMember(guildId: string, staffRoleId: string)
 		return null;
 	}
 
-	return candidates[Math.floor(Math.random() * candidates.length)];
+	return candidates[randomInt(candidates.length)];
 }
 
 export async function getStaffRoleMembers(guildId: string, staffRoleId: string) {
