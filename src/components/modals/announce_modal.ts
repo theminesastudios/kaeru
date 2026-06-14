@@ -18,12 +18,12 @@ import { getEmoji, getEmojiData } from "../../utils/index.ts";
 import { getDiscordRestClient } from "../../utils/rest.ts";
 
 const reactionPaths = [
-	"reactions.user.heart",
-	"reactions.user.thumbsup",
-	"reactions.user.thumbsdown",
-	"reactions.user.haha",
-	"reactions.user.emphasize",
-	"reactions.user.question",
+	"reactions.kaeru.heart",
+	"reactions.kaeru.thumbsup",
+	"reactions.kaeru.thumbsdown",
+	"reactions.kaeru.haha",
+	"reactions.kaeru.emphasize",
+	"reactions.kaeru.question",
 ] as const;
 
 async function addAnnouncementReactions(
