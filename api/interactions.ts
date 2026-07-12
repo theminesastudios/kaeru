@@ -5,6 +5,7 @@ import {
 	type APIApplicationCommandAutocompleteInteraction,
 	type APIInteractionResponse,
 } from "discord-api-types/v10";
+import { getTranslationLanguageChoices } from "../src/utils/translationLanguages.js";
 import { getCreateServerAutocompleteChoices } from "../src/utils/createTicketFlow.js";
 import { getActiveTicketAutocompleteChoices } from "../src/utils/ticketControls.js";
 
@@ -79,7 +80,7 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
 		});
 
 		if (interaction.type === InteractionType.ApplicationCommandAutocomplete) {
-			sendJson(res, 200, await handleTicketAutocomplete(interaction));
+			sendJson(res, 200, await handleAutocomplete(interaction));
 			return;
 		}
 	} catch (error) {
@@ -93,6 +94,27 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
 	}
 
 	return nodeHandler(req, res);
+}
+
+function handleAutocomplete(
+	interaction: APIApplicationCommandAutocompleteInteraction,
+): APIInteractionResponse | Promise<APIInteractionResponse> {
+	if (["çevir", "translate"].includes(interaction.data.name)) {
+		const focusedOption = findFocusedOption(interaction.data.options);
+		if (!focusedOption || !["dil", "language"].includes(focusedOption.name)) {
+			return autocompleteResponse([]);
+		}
+
+		return autocompleteResponse(
+			getTranslationLanguageChoices(
+				String(focusedOption.value ?? ""),
+				25,
+				interaction.locale,
+			),
+		);
+	}
+
+	return handleTicketAutocomplete(interaction);
 }
 
 async function handleTicketAutocomplete(
@@ -127,7 +149,11 @@ async function handleTicketAutocomplete(
 }
 
 function autocompleteResponse(
-	choices: Array<{ name: string; value: string }>,
+	choices: Array<{
+		name: string;
+		value: string;
+		name_localizations?: Record<string, string>;
+	}>,
 ): APIInteractionResponse {
 	return {
 		type: InteractionResponseType.ApplicationCommandAutocompleteResult,
