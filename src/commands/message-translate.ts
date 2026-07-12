@@ -1,10 +1,8 @@
 import {
 	CommandContext,
-	ContainerBuilder,
 	IntegrationType,
 	InteractionFlags,
 	MessageCommandBuilder,
-	TextDisplayBuilder,
 } from "@minesa-org/mini-interaction";
 
 import type {
@@ -15,7 +13,6 @@ import type {
 import { queuePokeTranslation } from "../services/pokeTranslation.ts";
 
 import {
-	getEmoji,
 	langMap,
 	log,
 	sendAlertMessage,
@@ -46,10 +43,7 @@ const messageTranslate: InteractionCommand = {
 		interaction: MessageContextMenuInteraction,
 	) => {
 		await interaction.deferReply({
-			flags: [
-				InteractionFlags.IsComponentsV2,
-				InteractionFlags.Ephemeral,
-			],
+			flags: InteractionFlags.Ephemeral,
 		});
 
 		const message = interaction.targetMessage;
@@ -96,13 +90,7 @@ const messageTranslate: InteractionCommand = {
 				"english";
 
 			await interaction.editReply({
-				components: [
-					new ContainerBuilder().addComponent(
-						new TextDisplayBuilder().setContent(
-							`${getEmoji("globe")} Poke is translating this message…`,
-						),
-					),
-				],
+				content: "Poke is translating this message…",
 			});
 
 			await queuePokeTranslation({
@@ -110,12 +98,11 @@ const messageTranslate: InteractionCommand = {
 				targetLanguage: targetLang,
 				applicationId: interaction.application_id,
 				interactionToken: interaction.token,
-				responseStyle: "message-command",
 			});
 		} catch (err) {
 			log(
 				"error",
-				"Failed to queue Poke message translation:",
+				"Failed to send message translation to Poke ingest:",
 				err,
 			);
 
