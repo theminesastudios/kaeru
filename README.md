@@ -5,7 +5,7 @@ Core features include ticketing, real-time translation, slang normalization, and
 
 ## Cloudflare Workers AI translation setup
 
-The `/translate` command and the message translation context command defer an ephemeral Discord response, detect the source language with `@cf/meta/llama-3.2-1b-instruct`, and translate it into the invoking user's Discord language with `@cf/meta/m2m100-1.2b`.
+The `/translate` command lets users select a target language through Discord autocomplete. The message translation context command continues to translate into the invoking user's Discord language. Both commands defer an ephemeral Discord response, detect the source language with `@cf/meta/llama-3.2-1b-instruct`, and translate it with `@cf/meta/m2m100-1.2b`.
 
 Required Vercel environment variables:
 
@@ -15,6 +15,8 @@ Required Vercel environment variables:
 When creating a custom token rather than using Cloudflare's template, grant both `Workers AI - Read` and `Workers AI - Edit` permissions.
 
 Translation is delivered directly to the deferred Discord interaction. Results longer than Discord's 2,000-character message limit are split into additional ephemeral follow-up messages, and mention parsing is disabled for translated output.
+
+To inspect usage, open the Cloudflare dashboard, select the account used by `CLOUDFLARE_ACCOUNT_ID`, and open **Workers AI**. The usage view shows consumed neurons and model activity for the account. Cloudflare's free allocation resets daily.
 
 No Poke workflow, callback route, public model hosting, or `POKE_INGEST_URL` is required.
 
