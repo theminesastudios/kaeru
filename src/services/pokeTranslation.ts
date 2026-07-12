@@ -22,8 +22,7 @@ export async function queuePokeTranslation({
 			interaction_token: interactionToken,
 			application_id: applicationId,
 			original_text: text,
-			// Keeps the existing /translate language option available. A Poke
-			// workflow with a fixed target language may safely ignore this field.
+			// Resolved from the invoking user's Discord client locale.
 			target_language: targetLanguage,
 		}),
 		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
