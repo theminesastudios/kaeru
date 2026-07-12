@@ -5,11 +5,9 @@ import {
 	InteractionFlags,
 } from "@minesa-org/mini-interaction";
 import type { CommandInteraction, InteractionCommand } from "@minesa-org/mini-interaction";
-import { generateKaruJson } from "../config/ai.ts";
+import { queuePokeTranslation } from "../services/pokeTranslation.ts";
 import { log } from "../utils/index.ts";
 import { resolveTranslationLanguage } from "../utils/translationLanguages.ts";
-
-const MAX_MESSAGE_TEXT_LENGTH = 2000;
 
 const COMMAND_NAME_LOCALIZATIONS = {
 	tr: "çevir",
@@ -27,18 +25,18 @@ const COMMAND_NAME_LOCALIZATIONS = {
 };
 
 const COMMAND_DESCRIPTION_LOCALIZATIONS = {
-	"en-US": "Translate text into another language with AI",
-	"pt-BR": "Traduza texto para outro idioma com IA",
-	it: "Traduci il testo in un'altra lingua con l'IA",
-	de: "Übersetze Text mit KI in eine andere Sprache",
-	"es-ES": "Traduce texto a otro idioma con IA",
-	fr: "Traduisez du texte dans une autre langue avec l'IA",
-	ro: "Tradu textul în altă limbă cu IA",
-	el: "Μετάφρασε κείμενο σε άλλη γλώσσα με AI",
-	ru: "Переведи текст на другой язык с ИИ",
-	"zh-CN": "使用 AI 将文本翻译成另一种语言",
-	ja: "AIでテキストを別の言語に翻訳",
-	ko: "AI로 텍스트를 다른 언어로 번역",
+	"en-US": "Translate text into another language",
+	"pt-BR": "Traduza texto para outro idioma",
+	it: "Traduci il testo in un'altra lingua",
+	de: "Übersetze Text in eine andere Sprache",
+	"es-ES": "Traduce texto a otro idioma",
+	fr: "Traduisez du texte dans une autre langue",
+	ro: "Tradu textul în altă limbă",
+	el: "Μετάφρασε κείμενο σε άλλη γλώσσα",
+	ru: "Переведи текст на другой язык",
+	"zh-CN": "将文本翻译成另一种语言",
+	ja: "テキストを別の言語に翻訳",
+	ko: "텍스트를 다른 언어로 번역",
 };
 
 const LANGUAGE_OPTION_NAME_LOCALIZATIONS = {
@@ -101,35 +99,11 @@ const TEXT_OPTION_DESCRIPTION_LOCALIZATIONS = {
 	ko: "번역할 텍스트",
 };
 
-function splitMessageText(text: string) {
-	const chunks: string[] = [];
-	let remaining = text.trim();
-
-	while (remaining.length > MAX_MESSAGE_TEXT_LENGTH) {
-		let splitIndex = remaining.lastIndexOf("\n", MAX_MESSAGE_TEXT_LENGTH);
-		if (splitIndex < MAX_MESSAGE_TEXT_LENGTH * 0.5) {
-			splitIndex = remaining.lastIndexOf(" ", MAX_MESSAGE_TEXT_LENGTH);
-		}
-		if (splitIndex <= 0) {
-			splitIndex = MAX_MESSAGE_TEXT_LENGTH;
-		}
-
-		chunks.push(remaining.slice(0, splitIndex).trim());
-		remaining = remaining.slice(splitIndex).trim();
-	}
-
-	if (remaining) {
-		chunks.push(remaining);
-	}
-
-	return chunks;
-}
-
 const translate: InteractionCommand = {
 	data: new CommandBuilder()
 		.setName("translate")
 		.setNameLocalizations(COMMAND_NAME_LOCALIZATIONS)
-		.setDescription("Metni yapay zeka ile başka bir dile çevir")
+		.setDescription("Metni başka bir dile çevir")
 		.setDescriptionLocalizations(COMMAND_DESCRIPTION_LOCALIZATIONS)
 		.setIntegrationTypes([
 			IntegrationType.UserInstall,
@@ -178,65 +152,24 @@ const translate: InteractionCommand = {
 
 		const targetLanguage = resolveTranslationLanguage(languageInput);
 
-		const prompt = `
-Translate the user's text into ${targetLanguage}.
-
-Rules:
-- Return only the translated text in the requested target language.
-- Preserve meaning, tone, markdown, URLs, mentions, emoji, code blocks, and line breaks.
-- Do not add explanations, notes, summaries, or quotation marks around the translation.
-- If the text is already in ${targetLanguage}, still return a polished version in ${targetLanguage}.
-
-Return ONLY valid JSON with this schema:
-{
-  "detectedLanguage": "detected source language",
-  "targetLanguage": "resolved target language",
-  "translation": "translated text"
-}
-
-Text:
-"""${textInput}"""
-`.trim();
-
 		try {
-			const parsed = await generateKaruJson<{
-				detectedLanguage?: string;
-				targetLanguage?: string;
-				translation?: string;
-			}>({
-				model: "gemma-4-26b-a4b-it",
-				contents: prompt,
-				config: {
-					temperature: 0.1,
-					maxOutputTokens: 2048,
-					topP: 0.8,
-					topK: 20,
-				},
-			});
-
-			const translation = parsed.translation?.trim();
-			if (!translation) {
-				throw new Error("Missing translation output");
-			}
-
-			const chunks = splitMessageText(translation);
-
 			await interaction.editReply({
-				content: chunks[0],
+				content: "Poke is translating your text…",
 			});
 
-			for (let i = 1; i < chunks.length; i++) {
-				await interaction.followUp({
-					content: chunks[i],
-					flags: InteractionFlags.Ephemeral,
-				});
-			}
+			await queuePokeTranslation({
+				text: textInput,
+				targetLanguage,
+				applicationId: interaction.application_id,
+				interactionToken: interaction.token,
+				responseStyle: "plain",
+			});
 		} catch (error) {
-			log("error", "Failed to execute translate command:", error);
+			log("error", "Failed to queue Poke translation:", error);
 
 			return interaction.editReply({
 				content:
-					"Failed to translate with Karu. The system might be confused - try again in a moment.",
+					"Failed to send the translation request to Poke. Please try again shortly.",
 			});
 		}
 	},
