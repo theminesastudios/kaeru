@@ -5,15 +5,26 @@ Core features include ticketing, real-time translation, slang normalization, and
 
 ## Poke translation setup
 
-The `/translate` command and the message translation context command send translation jobs to the Poke V2 API. Poke must have an outbound HTTP integration or recipe that can perform the callback POST requested in each job.
+The `/translate` command and the message translation context command send the deferred Discord interaction directly to the configured Poke ingest endpoint. Poke receives the interaction token and application ID, then updates the original Discord response without Discord OAuth or a callback endpoint in Kaeru.
 
-Required environment variables:
+Required environment variable:
 
-- `POKE_API_KEY`: V2 API key created in Poke Kitchen. Legacy `pk_` keys do not work with the new API endpoint.
-- `POKE_CALLBACK_SECRET`: Random secret of at least 32 characters used to encrypt the temporary Discord callback state.
-- `POKE_CALLBACK_URL`: Public HTTPS URL for the callback endpoint, such as `https://your-domain.example/api/poke-webhook`. This is optional on Vercel when `VERCEL_PROJECT_PRODUCTION_URL` or `VERCEL_URL` is available.
+- `POKE_INGEST_URL`: Private HTTPS ingest URL supplied by the Poke workflow.
 
-The callback state expires after 14 minutes. No Discord interaction token is stored in a database or exposed to Poke as plaintext.
+Kaeru sends this JSON payload:
+
+```json
+{
+  "interaction_token": "DISCORD_INTERACTION_TOKEN",
+  "application_id": "DISCORD_APPLICATION_ID",
+  "original_text": "Text to translate",
+  "target_language": "Resolved target language"
+}
+```
+
+The first three fields match the Poke ingest contract. `target_language` preserves Kaeru's existing language option and may be ignored when the Poke workflow uses a fixed target language.
+
+Treat `POKE_INGEST_URL` as a secret because possession of the URL may allow requests to the Poke workflow.
 
 ## GitHub Org Metadata
 
