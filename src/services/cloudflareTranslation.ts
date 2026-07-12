@@ -21,15 +21,19 @@ type CloudflareEnvelope<T> = {
 	}>;
 };
 
-type LanguageDetectionResult = {
-	response?: string;
-};
+type LanguageDetectionResult =
+	| string
+	| {
+			response?: string;
+	  };
 
-type TranslationResult = {
-	translated_text?: string;
-	translation?: string;
-	response?: string;
-};
+type TranslationResult =
+	| string
+	| {
+			translated_text?: string;
+			translation?: string;
+			response?: string;
+	  };
 
 export type TranslateTextOptions = {
 	text: string;
@@ -93,7 +97,8 @@ async function detectSourceLanguage(text: string) {
 		},
 	);
 
-	const detectedLanguage = normalizeLanguageName(result.response || "");
+	const rawLanguage = typeof result === "string" ? result : result.response || "";
+	const detectedLanguage = normalizeLanguageName(rawLanguage);
 	return SUPPORTED_LANGUAGE_NAMES.has(detectedLanguage)
 		? detectedLanguage
 		: "english";
@@ -149,6 +154,10 @@ async function runCloudflareModel<T>(
 }
 
 function readTranslation(result: TranslationResult) {
+	if (typeof result === "string") {
+		return result.trim();
+	}
+
 	return (
 		result.translated_text ||
 		result.translation ||
