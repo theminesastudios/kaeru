@@ -11,7 +11,7 @@ import type {
 } from "@minesa-org/mini-interaction";
 
 import { queuePokeTranslation } from "../services/pokeTranslation.ts";
-import { langMap, log } from "../utils/index.ts";
+import { log, resolveDiscordLocaleLanguage } from "../utils/index.ts";
 
 const messageTranslate: InteractionCommand = {
 	data: new MessageCommandBuilder()
@@ -65,13 +65,7 @@ const messageTranslate: InteractionCommand = {
 				});
 			}
 
-			const fullLocale = interaction.locale || "en-US";
-			const intl = new Intl.Locale(fullLocale);
-			const rawLang = intl.language.toLowerCase();
-			const targetLang =
-				langMap[fullLocale.toLowerCase()] ||
-				langMap[rawLang] ||
-				"english";
+			const targetLanguage = resolveDiscordLocaleLanguage(interaction.locale);
 
 			await interaction.editReply({
 				content: "Poke is translating this message…",
@@ -79,7 +73,7 @@ const messageTranslate: InteractionCommand = {
 
 			await queuePokeTranslation({
 				text: safeMessage,
-				targetLanguage: targetLang,
+				targetLanguage,
 				applicationId: interaction.application_id,
 				interactionToken: interaction.token,
 			});
