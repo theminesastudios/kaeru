@@ -5,7 +5,8 @@ import {
 	InteractionFlags,
 } from "@minesa-org/mini-interaction";
 import type { CommandInteraction, InteractionCommand } from "@minesa-org/mini-interaction";
-import { queuePokeTranslation } from "../services/pokeTranslation.ts";
+import { translateText } from "../services/cloudflareTranslation.ts";
+import { deliverDiscordInteractionReply } from "../services/discordInteractionReply.ts";
 import { log, resolveDiscordLocaleLanguage } from "../utils/index.ts";
 
 const COMMAND_NAME_LOCALIZATIONS = {
@@ -110,21 +111,24 @@ const translate: InteractionCommand = {
 
 		try {
 			await interaction.editReply({
-				content: "Poke is translating your text…",
+				content: "Translating your text…",
 			});
 
-			await queuePokeTranslation({
+			const translatedText = await translateText({
 				text: textInput,
 				targetLanguage,
+			});
+
+			await deliverDiscordInteractionReply({
 				applicationId: interaction.application_id,
 				interactionToken: interaction.token,
+				content: translatedText,
 			});
 		} catch (error) {
-			log("error", "Failed to send translation to Poke ingest:", error);
+			log("error", "Cloudflare translation failed:", error);
 
 			return interaction.editReply({
-				content:
-					"Failed to send the translation request to Poke. Please try again shortly.",
+				content: "Translation failed. Please try again shortly.",
 			});
 		}
 	},
