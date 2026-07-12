@@ -162,10 +162,9 @@ const translate: InteractionCommand = {
 				targetLanguage,
 				applicationId: interaction.application_id,
 				interactionToken: interaction.token,
-				responseStyle: "plain",
 			});
 		} catch (error) {
-			log("error", "Failed to queue Poke translation:", error);
+			log("error", "Failed to send translation to Poke ingest:", error);
 
 			return interaction.editReply({
 				content:
