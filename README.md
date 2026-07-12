@@ -23,7 +23,7 @@ Kaeru sends this JSON payload to Poke:
 }
 ```
 
-`interaction_token_b64` is an opaque transport-safe backup. Poke should forward every input field unchanged and append only `translated_text`. This prevents the LLM or forwarding step from accidentally reformatting the Discord interaction token.
+Poke uses the source text and target language for translation. The callback must use the encoded token rather than the plain token.
 
 After translating, Poke must send a `POST` request with `Content-Type: application/json` to:
 
@@ -35,16 +35,19 @@ Callback payload:
 
 ```json
 {
-  "interaction_token": "DISCORD_INTERACTION_TOKEN",
-  "interaction_token_b64": "BASE64URL_ENCODED_DISCORD_INTERACTION_TOKEN",
+  "interaction_token_b64": "BASE64_OR_BASE64URL_ENCODED_DISCORD_INTERACTION_TOKEN",
   "application_id": "DISCORD_APPLICATION_ID",
-  "original_text": "Text to translate",
-  "target_language": "turkish",
   "translated_text": "Translated result"
 }
 ```
 
-The callback route prefers the decoded Base64URL token, falls back to the trimmed plain token for older callbacks, patches the original deferred Discord interaction response, disables mention parsing, and sends additional ephemeral follow-up messages when the translation exceeds Discord's 2,000-character content limit.
+The callback route requires exactly these three values, safely decodes and round-trip validates `interaction_token_b64`, then uses the decoded raw token to patch:
+
+```text
+PATCH https://discord.com/api/v10/webhooks/{application_id}/{interaction_token}/messages/@original
+```
+
+The callback disables mention parsing and sends additional ephemeral follow-up messages when the translation exceeds Discord's 2,000-character content limit. It accepts both standard Base64 and Base64URL token encodings.
 
 Treat `POKE_INGEST_URL` and Discord interaction tokens as secrets. The callback currently follows Poke's unauthenticated contract and therefore does not expect an authorization header.
 
