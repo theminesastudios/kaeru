@@ -6,8 +6,7 @@ import {
 } from "@minesa-org/mini-interaction";
 import type { CommandInteraction, InteractionCommand } from "@minesa-org/mini-interaction";
 import { queuePokeTranslation } from "../services/pokeTranslation.ts";
-import { log } from "../utils/index.ts";
-import { resolveTranslationLanguage } from "../utils/translationLanguages.ts";
+import { log, resolveDiscordLocaleLanguage } from "../utils/index.ts";
 
 const COMMAND_NAME_LOCALIZATIONS = {
 	tr: "çevir",
@@ -25,48 +24,18 @@ const COMMAND_NAME_LOCALIZATIONS = {
 };
 
 const COMMAND_DESCRIPTION_LOCALIZATIONS = {
-	"en-US": "Translate text into another language",
-	"pt-BR": "Traduza texto para outro idioma",
-	it: "Traduci il testo in un'altra lingua",
-	de: "Übersetze Text in eine andere Sprache",
-	"es-ES": "Traduce texto a otro idioma",
-	fr: "Traduisez du texte dans une autre langue",
-	ro: "Tradu textul în altă limbă",
-	el: "Μετάφρασε κείμενο σε άλλη γλώσσα",
-	ru: "Переведи текст на другой язык",
-	"zh-CN": "将文本翻译成另一种语言",
-	ja: "テキストを別の言語に翻訳",
-	ko: "텍스트를 다른 언어로 번역",
-};
-
-const LANGUAGE_OPTION_NAME_LOCALIZATIONS = {
-	"en-US": "language",
-	"pt-BR": "idioma",
-	it: "lingua",
-	de: "sprache",
-	"es-ES": "idioma",
-	fr: "langue",
-	ro: "limba",
-	el: "γλώσσα",
-	ru: "язык",
-	"zh-CN": "语言",
-	ja: "言語",
-	ko: "언어",
-};
-
-const LANGUAGE_OPTION_DESCRIPTION_LOCALIZATIONS = {
-	"en-US": "Target language",
-	"pt-BR": "Idioma de destino",
-	it: "Lingua di destinazione",
-	de: "Zielsprache",
-	"es-ES": "Idioma de destino",
-	fr: "Langue cible",
-	ro: "Limba țintă",
-	el: "Γλώσσα προορισμού",
-	ru: "Целевой язык",
-	"zh-CN": "目标语言",
-	ja: "翻訳先の言語",
-	ko: "대상 언어",
+	"en-US": "Translate text into your Discord language",
+	"pt-BR": "Traduza texto para o idioma do seu Discord",
+	it: "Traduci il testo nella lingua di Discord",
+	de: "Übersetze Text in deine Discord-Sprache",
+	"es-ES": "Traduce texto al idioma de tu Discord",
+	fr: "Traduisez le texte dans la langue de votre Discord",
+	ro: "Tradu textul în limba Discord",
+	el: "Μετάφρασε κείμενο στη γλώσσα του Discord σου",
+	ru: "Переведи текст на язык твоего Discord",
+	"zh-CN": "将文本翻译成你的 Discord 语言",
+	ja: "テキストをDiscordの言語に翻訳",
+	ko: "텍스트를 Discord 언어로 번역",
 };
 
 const TEXT_OPTION_NAME_LOCALIZATIONS = {
@@ -103,7 +72,7 @@ const translate: InteractionCommand = {
 	data: new CommandBuilder()
 		.setName("translate")
 		.setNameLocalizations(COMMAND_NAME_LOCALIZATIONS)
-		.setDescription("Metni başka bir dile çevir")
+		.setDescription("Metni Discord diline çevir")
 		.setDescriptionLocalizations(COMMAND_DESCRIPTION_LOCALIZATIONS)
 		.setIntegrationTypes([
 			IntegrationType.UserInstall,
@@ -114,17 +83,6 @@ const translate: InteractionCommand = {
 			CommandContext.DM,
 			CommandContext.Guild,
 		])
-		.addStringOption((opt) =>
-			opt
-				.setName("dil")
-				.setNameLocalizations(LANGUAGE_OPTION_NAME_LOCALIZATIONS)
-				.setDescription("Hedef dil")
-				.setDescriptionLocalizations(LANGUAGE_OPTION_DESCRIPTION_LOCALIZATIONS)
-				.setRequired(true)
-				.setMinLength(2)
-				.setMaxLength(64)
-				.setAutocomplete(true),
-		)
 		.addStringOption((opt) =>
 			opt
 				.setName("metin")
@@ -141,16 +99,14 @@ const translate: InteractionCommand = {
 			flags: InteractionFlags.Ephemeral,
 		});
 
-		const languageInput = interaction.options.getString("dil")?.trim();
 		const textInput = interaction.options.getString("metin")?.trim();
-
-		if (!languageInput || !textInput) {
+		if (!textInput) {
 			return interaction.editReply({
-				content: "Please provide both a target language and text to translate.",
+				content: "Please provide text to translate.",
 			});
 		}
 
-		const targetLanguage = resolveTranslationLanguage(languageInput);
+		const targetLanguage = resolveDiscordLocaleLanguage(interaction.locale);
 
 		try {
 			await interaction.editReply({
