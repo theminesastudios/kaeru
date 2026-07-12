@@ -4,16 +4,9 @@ const MAX_DISCORD_CONTENT_LENGTH = 2_000;
 const MAX_TRANSLATION_LENGTH = 20_000;
 const EPHEMERAL_FLAG = 1 << 6;
 
-type HeaderMap =
-	| Record<string, string | string[] | undefined>
-	| {
-			get(name: string): string | null;
-	  };
-
 type NodeRequest = {
 	method?: string;
 	body?: unknown;
-	headers?: HeaderMap;
 };
 
 type NodeResponse = {
@@ -25,10 +18,8 @@ type NodeResponse = {
 };
 
 type PokeCallbackPayload = {
-	interaction_token: string;
+	interaction_token_b64: string;
 	application_id: string;
-	original_text: string;
-	target_language: string;
 	translated_text: string;
 };
 
@@ -41,6 +32,9 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
 
 	try {
 		const payload = parseCallbackPayload(req.body);
+		const interactionToken = decodeInteractionToken(
+			payload.interaction_token_b64,
+		);
 		const translatedText = payload.translated_text.trim();
 
 		if (!translatedText) {
@@ -54,14 +48,14 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
 		const chunks = splitDiscordText(translatedText);
 		await editOriginalDiscordReply(
 			payload.application_id,
-			payload.interaction_token,
+			interactionToken,
 			chunks[0],
 		);
 
 		for (const chunk of chunks.slice(1)) {
 			await createDiscordFollowUp(
 				payload.application_id,
-				payload.interaction_token,
+				interactionToken,
 				chunk,
 			);
 		}
@@ -69,7 +63,6 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
 		sendJson(res, 200, {
 			success: true,
 			chunks: chunks.length,
-			target_language: payload.target_language,
 		});
 	} catch (error) {
 		const statusCode = error instanceof HttpError ? error.statusCode : 500;
@@ -134,7 +127,7 @@ async function sendDiscordRequest(url: string, init: RequestInit) {
 		throw new HttpError(
 			502,
 			invalidToken
-				? "Discord rejected the interaction token as invalid, altered, or expired. Poke must forward interaction_token_b64 unchanged."
+				? "Discord rejected the decoded interaction token. Use a fresh interaction and ensure interaction_token_b64 and application_id originate from the same Discord interaction."
 				: `Discord webhook request failed (${response.status}): ${(
 						body || response.statusText
 					).slice(0, 300)}`,
@@ -147,8 +140,8 @@ function createDiscordWebhookUrl(
 	interactionToken: string,
 ) {
 	return `${DISCORD_API_BASE_URL}/webhooks/${encodeURIComponent(
-		applicationId.trim(),
-	)}/${encodeURIComponent(interactionToken.trim())}`;
+		applicationId,
+	)}/${encodeURIComponent(interactionToken)}`;
 }
 
 function parseCallbackPayload(body: unknown): PokeCallbackPayload {
@@ -157,18 +150,13 @@ function parseCallbackPayload(body: unknown): PokeCallbackPayload {
 		throw new HttpError(400, "Invalid JSON body");
 	}
 
-	const plainToken = optionalString(parsedBody, "interaction_token", 1_000);
-	const encodedToken = optionalString(
-		parsedBody,
-		"interaction_token_b64",
-		2_000,
-	);
-
 	return {
-		interaction_token: resolveInteractionToken(plainToken, encodedToken),
-		application_id: requireString(parsedBody, "application_id", 32),
-		original_text: requireString(parsedBody, "original_text", 20_000),
-		target_language: requireString(parsedBody, "target_language", 128),
+		interaction_token_b64: requireString(
+			parsedBody,
+			"interaction_token_b64",
+			2_000,
+		),
+		application_id: requireApplicationId(parsedBody),
 		translated_text: requireString(
 			parsedBody,
 			"translated_text",
@@ -177,48 +165,53 @@ function parseCallbackPayload(body: unknown): PokeCallbackPayload {
 	};
 }
 
-function resolveInteractionToken(
-	plainToken: string | undefined,
-	encodedToken: string | undefined,
-) {
-	const normalizedPlainToken = plainToken?.trim();
-	if (encodedToken) {
-		const normalizedEncodedToken = encodedToken.trim().replace(/=+$/u, "");
-		if (!/^[A-Za-z0-9_-]+$/u.test(normalizedEncodedToken)) {
-			throw new HttpError(400, "interaction_token_b64 is not valid Base64URL");
-		}
-
-		const decodedToken = Buffer.from(
-			normalizedEncodedToken,
-			"base64url",
-		).toString("utf8").trim();
-
-		if (!decodedToken || decodedToken.length > 1_000) {
-			throw new HttpError(400, "interaction_token_b64 decodes to an invalid token");
-		}
-
-		const roundTrip = Buffer.from(decodedToken, "utf8").toString("base64url");
-		if (roundTrip !== normalizedEncodedToken) {
-			throw new HttpError(400, "interaction_token_b64 failed validation");
-		}
-
-		if (normalizedPlainToken && normalizedPlainToken !== decodedToken) {
-			console.warn(
-				"[Poke webhook] Plain interaction token changed in transit; using Base64URL backup.",
-			);
-		}
-
-		return decodedToken;
-	}
-
-	if (!normalizedPlainToken) {
+function decodeInteractionToken(encodedValue: string) {
+	const normalizedInput = encodedValue.trim();
+	if (!/^[A-Za-z0-9+/_-]+={0,2}$/u.test(normalizedInput)) {
 		throw new HttpError(
 			400,
-			"interaction_token or interaction_token_b64 is required",
+			"interaction_token_b64 must be valid Base64 or Base64URL",
 		);
 	}
 
-	return normalizedPlainToken;
+	const withoutPadding = normalizedInput.replace(/=+$/u, "");
+	const canonicalBase64Url = withoutPadding
+		.replaceAll("+", "-")
+		.replaceAll("/", "_");
+
+	let decodedToken: string;
+	try {
+		decodedToken = Buffer.from(canonicalBase64Url, "base64url").toString("utf8");
+	} catch {
+		throw new HttpError(400, "interaction_token_b64 could not be decoded");
+	}
+
+	if (
+		!decodedToken ||
+		decodedToken.length > 1_000 ||
+		decodedToken !== decodedToken.trim() ||
+		decodedToken.includes("\uFFFD")
+	) {
+		throw new HttpError(
+			400,
+			"interaction_token_b64 decodes to an invalid interaction token",
+		);
+	}
+
+	const roundTrip = Buffer.from(decodedToken, "utf8").toString("base64url");
+	if (roundTrip !== canonicalBase64Url) {
+		throw new HttpError(400, "interaction_token_b64 failed validation");
+	}
+
+	return decodedToken;
+}
+
+function requireApplicationId(record: Record<string, unknown>) {
+	const applicationId = requireString(record, "application_id", 32);
+	if (!/^\d{17,20}$/u.test(applicationId)) {
+		throw new HttpError(400, "application_id must be a Discord snowflake");
+	}
+	return applicationId;
 }
 
 function parseBody(body: unknown): unknown {
@@ -243,27 +236,10 @@ function parseBody(body: unknown): unknown {
 
 function requireString(
 	record: Record<string, unknown>,
-	key: string,
-	maxLength: number,
-) {
-	const value = optionalString(record, key, maxLength);
-	if (!value) {
-		throw new HttpError(400, `${key} must be a non-empty string`);
-	}
-
-	return value.trim();
-}
-
-function optionalString(
-	record: Record<string, unknown>,
-	key: string,
+	key: keyof PokeCallbackPayload,
 	maxLength: number,
 ) {
 	const value = record[key];
-	if (value === undefined || value === null) {
-		return undefined;
-	}
-
 	if (typeof value !== "string" || !value.trim()) {
 		throw new HttpError(400, `${key} must be a non-empty string`);
 	}
@@ -272,7 +248,7 @@ function optionalString(
 		throw new HttpError(413, `${key} is too long`);
 	}
 
-	return value;
+	return value.trim();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
