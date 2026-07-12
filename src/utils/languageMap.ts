@@ -111,3 +111,13 @@ export const langMap: Record<string, string> = {
 	yo: "yoruba",
 	zu: "zulu",
 };
+
+export function resolveDiscordLocaleLanguage(locale?: string | null) {
+	const normalizedLocale = (locale || "en-US")
+		.trim()
+		.replaceAll("_", "-")
+		.toLowerCase();
+	const languageCode = normalizedLocale.split("-")[0];
+
+	return langMap[normalizedLocale] || langMap[languageCode] || "english";
+}
