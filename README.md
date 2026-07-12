@@ -3,53 +3,20 @@
 Kaeru is a streamlined Discord bot designed to cut down your server management time while boosting communication clarity and efficiency.  
 Core features include ticketing, real-time translation, slang normalization, and AI-driven summarization and key point extraction.
 
-## Poke translation setup
+## Cloudflare Workers AI translation setup
 
-The `/translate` command and the message translation context command defer an ephemeral Discord response, then send the interaction to the configured Poke ingest endpoint. Both commands derive the target language from the invoking user's Discord client locale.
+The `/translate` command and the message translation context command defer an ephemeral Discord response, detect the source language with `@cf/meta/llama-3.2-1b-instruct`, and translate it into the invoking user's Discord language with `@cf/meta/m2m100-1.2b`.
 
-Required environment variable:
+Required Vercel environment variables:
 
-- `POKE_INGEST_URL`: Private HTTPS ingest URL supplied by the Poke workflow.
+- `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account ID shown on the Workers AI REST API page.
+- `CLOUDFLARE_AI_TOKEN`: API token created from the Workers AI token template.
 
-Kaeru sends this JSON payload to Poke:
+When creating a custom token rather than using Cloudflare's template, grant both `Workers AI - Read` and `Workers AI - Edit` permissions.
 
-```json
-{
-  "interaction_token": "DISCORD_INTERACTION_TOKEN",
-  "interaction_token_b64": "BASE64URL_ENCODED_DISCORD_INTERACTION_TOKEN",
-  "application_id": "DISCORD_APPLICATION_ID",
-  "original_text": "Text to translate",
-  "target_language": "Language resolved from interaction.locale"
-}
-```
+Translation is delivered directly to the deferred Discord interaction. Results longer than Discord's 2,000-character message limit are split into additional ephemeral follow-up messages, and mention parsing is disabled for translated output.
 
-Poke uses the source text and target language for translation. The callback must use the encoded token rather than the plain token.
-
-After translating, Poke must send a `POST` request with `Content-Type: application/json` to:
-
-```text
-https://YOUR_KAERU_DOMAIN/api/poke-webhook
-```
-
-Callback payload:
-
-```json
-{
-  "interaction_token_b64": "BASE64_OR_BASE64URL_ENCODED_DISCORD_INTERACTION_TOKEN",
-  "application_id": "DISCORD_APPLICATION_ID",
-  "translated_text": "Translated result"
-}
-```
-
-The callback route requires exactly these three values, safely decodes and round-trip validates `interaction_token_b64`, then uses the decoded raw token to patch:
-
-```text
-PATCH https://discord.com/api/v10/webhooks/{application_id}/{interaction_token}/messages/@original
-```
-
-The callback disables mention parsing and sends additional ephemeral follow-up messages when the translation exceeds Discord's 2,000-character content limit. It accepts both standard Base64 and Base64URL token encodings.
-
-Treat `POKE_INGEST_URL` and Discord interaction tokens as secrets. The callback currently follows Poke's unauthenticated contract and therefore does not expect an authorization header.
+No Poke workflow, callback route, public model hosting, or `POKE_INGEST_URL` is required.
 
 ## GitHub Org Metadata
 
