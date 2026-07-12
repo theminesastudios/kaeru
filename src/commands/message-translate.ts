@@ -10,7 +10,8 @@ import type {
 	MessageContextMenuInteraction,
 } from "@minesa-org/mini-interaction";
 
-import { queuePokeTranslation } from "../services/pokeTranslation.ts";
+import { translateText } from "../services/cloudflareTranslation.ts";
+import { deliverDiscordInteractionReply } from "../services/discordInteractionReply.ts";
 import { log, resolveDiscordLocaleLanguage } from "../utils/index.ts";
 
 const messageTranslate: InteractionCommand = {
@@ -68,25 +69,24 @@ const messageTranslate: InteractionCommand = {
 			const targetLanguage = resolveDiscordLocaleLanguage(interaction.locale);
 
 			await interaction.editReply({
-				content: "Poke is translating this message…",
+				content: "Translating this message…",
 			});
 
-			await queuePokeTranslation({
+			const translatedText = await translateText({
 				text: safeMessage,
 				targetLanguage,
+			});
+
+			await deliverDiscordInteractionReply({
 				applicationId: interaction.application_id,
 				interactionToken: interaction.token,
+				content: translatedText,
 			});
-		} catch (err) {
-			log(
-				"error",
-				"Failed to send message translation to Poke ingest:",
-				err,
-			);
+		} catch (error) {
+			log("error", "Cloudflare message translation failed:", error);
 
 			return interaction.editReply({
-				content:
-					"Failed to send the translation request to Poke. Please try again shortly.",
+				content: "Translation failed. Please try again shortly.",
 			});
 		}
 	},
