@@ -11,12 +11,7 @@ import type {
 } from "@minesa-org/mini-interaction";
 
 import { queuePokeTranslation } from "../services/pokeTranslation.ts";
-
-import {
-	langMap,
-	log,
-	sendAlertMessage,
-} from "../utils/index.ts";
+import { langMap, log } from "../utils/index.ts";
 
 const messageTranslate: InteractionCommand = {
 	data: new MessageCommandBuilder()
@@ -53,11 +48,8 @@ const messageTranslate: InteractionCommand = {
 			typeof message.content !== "string" ||
 			!message.content.trim()
 		) {
-			return sendAlertMessage({
-				interaction,
-				content:
-					"This message has no readable text to translate.",
-				type: "info",
+			return interaction.editReply({
+				content: "This message has no readable text to translate.",
 			});
 		}
 
@@ -68,22 +60,14 @@ const messageTranslate: InteractionCommand = {
 				.trim();
 
 			if (!safeMessage) {
-				return sendAlertMessage({
-					interaction,
-					content:
-						"This message only contains unsupported content.",
-					type: "info",
+				return interaction.editReply({
+					content: "This message only contains unsupported content.",
 				});
 			}
 
-			const fullLocale =
-				interaction.locale || "en-US";
-
+			const fullLocale = interaction.locale || "en-US";
 			const intl = new Intl.Locale(fullLocale);
-
-			const rawLang =
-				intl.language.toLowerCase();
-
+			const rawLang = intl.language.toLowerCase();
 			const targetLang =
 				langMap[fullLocale.toLowerCase()] ||
 				langMap[rawLang] ||
@@ -106,11 +90,9 @@ const messageTranslate: InteractionCommand = {
 				err,
 			);
 
-			return sendAlertMessage({
-				interaction,
+			return interaction.editReply({
 				content:
 					"Failed to send the translation request to Poke. Please try again shortly.",
-				type: "error",
 			});
 		}
 	},
