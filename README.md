@@ -7,6 +7,8 @@ Core features include ticketing, real-time translation, slang normalization, and
 
 The `/translate` command and the message translation context command send the deferred Discord interaction directly to the configured Poke ingest endpoint. Poke receives the interaction token and application ID, then updates the original Discord response without Discord OAuth or a callback endpoint in Kaeru.
 
+Both translation commands derive the target language from the invoking user's Discord client locale. The slash command does not expose a separate language option.
+
 Required environment variable:
 
 - `POKE_INGEST_URL`: Private HTTPS ingest URL supplied by the Poke workflow.
@@ -18,11 +20,11 @@ Kaeru sends this JSON payload:
   "interaction_token": "DISCORD_INTERACTION_TOKEN",
   "application_id": "DISCORD_APPLICATION_ID",
   "original_text": "Text to translate",
-  "target_language": "Resolved target language"
+  "target_language": "Language resolved from interaction.locale"
 }
 ```
 
-The first three fields match the Poke ingest contract. `target_language` preserves Kaeru's existing language option and may be ignored when the Poke workflow uses a fixed target language.
+The first three fields match the Poke ingest contract. `target_language` tells the Poke workflow which language is configured in the invoking user's Discord client.
 
 Treat `POKE_INGEST_URL` as a secret because possession of the URL may allow requests to the Poke workflow.
 
