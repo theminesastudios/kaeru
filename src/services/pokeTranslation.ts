@@ -13,14 +13,20 @@ export async function queuePokeTranslation({
 	applicationId,
 	interactionToken,
 }: QueuePokeTranslationOptions) {
+	const normalizedToken = interactionToken.trim();
 	const response = await fetch(resolvePokeIngestUrl(), {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify({
-			interaction_token: interactionToken,
-			application_id: applicationId,
+			interaction_token: normalizedToken,
+			// Poke forwards this opaque backup unchanged. The callback prefers it
+			// if the plain token was reformatted while passing through the LLM step.
+			interaction_token_b64: Buffer.from(normalizedToken, "utf8").toString(
+				"base64url",
+			),
+			application_id: applicationId.trim(),
 			original_text: text,
 			// Resolved from the invoking user's Discord client locale.
 			target_language: targetLanguage,
