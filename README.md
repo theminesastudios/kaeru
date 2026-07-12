@@ -5,15 +5,13 @@ Core features include ticketing, real-time translation, slang normalization, and
 
 ## Poke translation setup
 
-The `/translate` command and the message translation context command send the deferred Discord interaction directly to the configured Poke ingest endpoint. Poke receives the interaction token and application ID, then updates the original Discord response without Discord OAuth or a callback endpoint in Kaeru.
-
-Both translation commands derive the target language from the invoking user's Discord client locale. The slash command does not expose a separate language option.
+The `/translate` command and the message translation context command defer an ephemeral Discord response, then send the interaction to the configured Poke ingest endpoint. Both commands derive the target language from the invoking user's Discord client locale.
 
 Required environment variable:
 
 - `POKE_INGEST_URL`: Private HTTPS ingest URL supplied by the Poke workflow.
 
-Kaeru sends this JSON payload:
+Kaeru sends this JSON payload to Poke:
 
 ```json
 {
@@ -24,9 +22,27 @@ Kaeru sends this JSON payload:
 }
 ```
 
-The first three fields match the Poke ingest contract. `target_language` tells the Poke workflow which language is configured in the invoking user's Discord client.
+After translating, Poke must send a `POST` request with `Content-Type: application/json` to:
 
-Treat `POKE_INGEST_URL` as a secret because possession of the URL may allow requests to the Poke workflow.
+```text
+https://YOUR_KAERU_DOMAIN/api/poke-webhook
+```
+
+Callback payload:
+
+```json
+{
+  "interaction_token": "DISCORD_INTERACTION_TOKEN",
+  "application_id": "DISCORD_APPLICATION_ID",
+  "original_text": "Text to translate",
+  "target_language": "turkish",
+  "translated_text": "Translated result"
+}
+```
+
+The callback route validates the payload, patches the original deferred Discord interaction response, disables mention parsing, and sends additional ephemeral follow-up messages when the translation exceeds Discord's 2,000-character content limit.
+
+Treat `POKE_INGEST_URL` and Discord interaction tokens as secrets. The callback currently follows Poke's unauthenticated contract and therefore does not expect an authorization header.
 
 ## GitHub Org Metadata
 
