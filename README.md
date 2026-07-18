@@ -3,9 +3,11 @@
 Kaeru is a streamlined Discord bot designed to cut down your server management time while boosting communication clarity and efficiency.  
 Core features include ticketing, real-time translation, slang normalization, and AI-driven summarization and key point extraction.
 
-## Cloudflare Workers AI translation setup
+## Cloudflare Workers AI setup
 
-The `/translate` command lets users select a target language through Discord autocomplete. The message translation context command continues to translate into the invoking user's Discord language. Both commands defer an ephemeral Discord response, detect the source language with `@cf/meta/llama-3.2-1b-instruct`, and translate it with `@cf/meta/m2m100-1.2b`.
+The `/translate` command lets users select a target language through Discord autocomplete. The message translation context command continues to translate into the invoking user's Discord language. Both commands detect the source language with `@cf/meta/llama-3.2-1b-instruct` and translate it with `@cf/meta/m2m100-1.2b`.
+
+Ticket descriptions are summarized into concise thread titles with `@cf/meta/llama-3.2-1b-instruct`. The **Summary & Key Points** message command and `/timelapse` channel command use the same instruct model for localized summaries and structured key-point extraction. Ticket title generation keeps a deterministic local fallback if Workers AI is unavailable.
 
 Required Vercel environment variables:
 
