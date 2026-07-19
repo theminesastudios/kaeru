@@ -1,5 +1,6 @@
 const CLOUDFLARE_API_BASE_URL = "https://api.cloudflare.com/client/v4/accounts";
 const DEFAULT_TEXT_MODEL = "@cf/meta/llama-3.2-1b-instruct";
+const DEFAULT_JSON_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast";
 const REQUEST_TIMEOUT_MS = 30_000;
 
 export type CloudflareAiMessage = {
@@ -31,15 +32,20 @@ type TextGenerationResult =
 			response?: string;
 	  };
 
+type JsonGenerationResult<T> =
+	| T
+	| string
+	| {
+			response?: T | string;
+	  };
+
 export async function generateCloudflareText({
 	messages,
 	model = DEFAULT_TEXT_MODEL,
 	maxTokens = 512,
 	temperature = 0.2,
 }: GenerateCloudflareTextOptions): Promise<string> {
-	if (messages.length === 0) {
-		throw new Error("Cloudflare text generation requires at least one message");
-	}
+	assertMessages(messages);
 
 	const result = await runCloudflareModel<TextGenerationResult>(model, {
 		messages,
@@ -56,18 +62,39 @@ export async function generateCloudflareText({
 	return text;
 }
 
-export async function generateCloudflareJson<T>(
-	options: GenerateCloudflareTextOptions,
-): Promise<T> {
-	const raw = await generateCloudflareText(options);
-	const parsed = tryParseJson<T>(raw);
+export async function generateCloudflareJson<T>({
+	messages,
+	model = DEFAULT_JSON_MODEL,
+	maxTokens = 512,
+	temperature = 0.2,
+}: GenerateCloudflareTextOptions): Promise<T> {
+	assertMessages(messages);
 
-	if (parsed !== undefined) {
-		return parsed;
+	const result = await runCloudflareModel<JsonGenerationResult<T>>(model, {
+		messages,
+		max_tokens: maxTokens,
+		temperature,
+		response_format: {
+			type: "json_object",
+		},
+	});
+	const response =
+		isRecord(result) && "response" in result ? result.response : result;
+
+	if (typeof response === "string") {
+		const parsed = tryParseJson<T>(response);
+		if (parsed !== undefined) return parsed;
+
+		const preview =
+			response.length > 300 ? `${response.slice(0, 300)}...` : response;
+		throw new Error(`Cloudflare returned invalid JSON: ${preview}`);
 	}
 
-	const preview = raw.length > 300 ? `${raw.slice(0, 300)}...` : raw;
-	throw new Error(`Cloudflare returned invalid JSON: ${preview}`);
+	if (response !== undefined && response !== null && typeof response === "object") {
+		return response as T;
+	}
+
+	throw new Error("Cloudflare returned an empty JSON generation response");
 }
 
 async function runCloudflareModel<T>(
@@ -182,6 +209,16 @@ function extractBalancedJson(raw: string): string | undefined {
 	}
 
 	return undefined;
+}
+
+function assertMessages(messages: CloudflareAiMessage[]) {
+	if (messages.length === 0) {
+		throw new Error("Cloudflare text generation requires at least one message");
+	}
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
 }
 
 function requireEnvironmentVariable(name: string) {
