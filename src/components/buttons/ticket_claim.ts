@@ -63,7 +63,23 @@ const ticketClaimButton: InteractionComponent = {
 			const previousStaffId =
 				typeof ticketData.claimedById === "string" ? ticketData.claimedById : null;
 
-			await claimTicketForStaff({
+			// A claimed ticket belongs to its claimant. Without this guard any
+			// staff member can take it back at any time, and because claiming
+			// removes the other person from the thread, two staff end up
+			// stealing the same ticket back and forth.
+			if (previousStaffId && previousStaffId !== actor.id) {
+				return buttonInteraction.editReply({
+					content: `${getEmoji("error")} <@!${previousStaffId}> already claimed this ticket.`,
+				});
+			}
+
+			if (previousStaffId === actor.id) {
+				return buttonInteraction.editReply({
+					content: `${getEmoji("people")} You already claimed this ticket.`,
+				});
+			}
+
+			const { removedMemberIds } = await claimTicketForStaff({
 				ticketData,
 				threadId,
 				claimant: {
@@ -72,14 +88,22 @@ const ticketClaimButton: InteractionComponent = {
 				},
 			});
 
+			// Report the cleanup in the ticket itself. A failed removal used to
+			// be a console-only warning, so a claim that quietly left people in
+			// the thread looked identical to a working one.
+			const removedNote =
+				removedMemberIds.length > 0
+					? ` • removed ${removedMemberIds.length} other member${
+							removedMemberIds.length === 1 ? "" : "s"
+						}`
+					: "";
+
 			await sendTicketLogMessage({
 				threadId,
 				emojiPath: "people",
 				content:
 					`-# **<@!${actor.id}>** has __claimed__ this ticket ${formatRelativeTimestamp()}` +
-					(previousStaffId && previousStaffId !== actor.id
-						? ` and replaced <@!${previousStaffId}>`
-						: ""),
+					removedNote,
 			});
 
 			return buttonInteraction.editReply({

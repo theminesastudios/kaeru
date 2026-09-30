@@ -591,19 +591,21 @@ export async function claimTicketForStaff({
 	// Claiming hands the ticket over: everyone else that was sitting in the
 	// thread (other staff, manually invited helpers, the previous claimant) is
 	// dropped, while the claimant and the ticket creator stay.
-	await removeOtherStaffRoleMembersFromThread({
+	const removedMemberIds = await removeOtherStaffRoleMembersFromThread({
 		guildId: ticketData.guildId,
 		threadId,
 		staffRoleId,
 		keepUserIds: [claimant.id, ticketData.userId],
 	});
 
-	return updateTicket(ticketData, {
+	const ticket = await updateTicket(ticketData, {
 		claimedById: claimant.id,
 		claimedByUsername: claimant.username ?? null,
 		claimedAt: Date.now(),
 		claimMode: "manual",
 	});
+
+	return { ticket, removedMemberIds };
 }
 
 export async function removeOtherStaffRoleMembersFromThread({
@@ -631,9 +633,21 @@ export async function removeOtherStaffRoleMembersFromThread({
 	// cannot be read.
 	const threadMemberIds = await getThreadMemberIds(threadId);
 
+	// The bot is always a member of the threads it creates, so an empty live
+	// list means the read did not return what we expect. Treating that as
+	// "nobody to remove" silently skipped the whole cleanup, which is exactly
+	// the failure this function exists to prevent, so warn and fall back.
+	const liveIds =
+		threadMemberIds && threadMemberIds.length > 0 ? threadMemberIds : null;
+	if (threadMemberIds && !liveIds) {
+		console.warn(
+			"[Kaeru] Live thread member list came back empty for a claimed ticket; falling back to the cached staff roster.",
+		);
+	}
+
 	let removableIds: string[];
-	if (threadMemberIds) {
-		removableIds = threadMemberIds;
+	if (liveIds) {
+		removableIds = liveIds;
 	} else if (staffRoleId) {
 		const staffMembers = await getStoredStaffRoster(guildId, staffRoleId);
 		removableIds = uniqueIds(staffMembers.map((member) => member.userId));
