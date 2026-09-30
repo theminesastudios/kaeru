@@ -484,6 +484,49 @@ export async function removeThreadMember(threadId: string, userId: string) {
 	);
 }
 
+// The bot is a member of every private thread it creates, so it must never be
+// removed from a ticket. Resolve it once per instance and cache the id.
+let botUserIdPromise: Promise<string | null> | undefined;
+
+export async function getBotUserId(): Promise<string | null> {
+	if (!botUserIdPromise) {
+		botUserIdPromise = fetchDiscord("/users/@me", process.env.DISCORD_BOT_TOKEN!, true)
+			.then((user) => (typeof user?.id === "string" ? user.id : null))
+			.catch((error) => {
+				console.warn("[Kaeru] Could not resolve the bot user id:", error);
+				botUserIdPromise = undefined;
+				return null;
+			});
+	}
+
+	return botUserIdPromise;
+}
+
+// Live source of truth for who is actually inside the thread. Returns null when
+// Discord could not be read, so callers can fall back instead of treating a
+// failed request as "the thread is empty".
+export async function getThreadMemberIds(threadId: string): Promise<string[] | null> {
+	const members = await fetchDiscord(
+		`/channels/${threadId}/thread-members`,
+		process.env.DISCORD_BOT_TOKEN!,
+		true,
+		"GET",
+		null,
+		5000,
+	).catch((error) => {
+		console.warn("[Kaeru] Could not fetch ticket thread members:", error);
+		return null;
+	});
+
+	if (!Array.isArray(members)) {
+		return null;
+	}
+
+	// Discord returns {id, user_id, join_timestamp, flags}; user_id is a fallback
+	// for older/edge payloads.
+	return uniqueIds(members.map((member: any) => member?.id ?? member?.user_id));
+}
+
 export async function getRandomStaffMember(guildId: string, staffRoleId: string) {
 	const candidates = await getStoredStaffRoster(guildId, staffRoleId);
 
@@ -535,8 +578,6 @@ export async function claimTicketForStaff({
 	threadId: string;
 	claimant: { id: string; username?: string };
 }) {
-	const previousStaffId =
-		typeof ticketData.claimedById === "string" ? ticketData.claimedById : null;
 	const guildData = await db.get(`guild:${ticketData.guildId}`).catch(() => null);
 	const staffRoleId =
 		typeof ticketData.staffRoleId === "string"
@@ -547,18 +588,15 @@ export async function claimTicketForStaff({
 
 	await addThreadMember(threadId, claimant.id);
 
+	// Claiming hands the ticket over: everyone else that was sitting in the
+	// thread (other staff, manually invited helpers, the previous claimant) is
+	// dropped, while the claimant and the ticket creator stay.
 	await removeOtherStaffRoleMembersFromThread({
 		guildId: ticketData.guildId,
 		threadId,
 		staffRoleId,
-		keepUserId: claimant.id,
+		keepUserIds: [claimant.id, ticketData.userId],
 	});
-
-	if (previousStaffId && previousStaffId !== claimant.id) {
-		await removeThreadMember(threadId, previousStaffId).catch((error) => {
-			console.warn("[Kaeru] Could not remove previous claimed staff member:", error);
-		});
-	}
 
 	return updateTicket(ticketData, {
 		claimedById: claimant.id,
@@ -572,30 +610,51 @@ export async function removeOtherStaffRoleMembersFromThread({
 	guildId,
 	threadId,
 	staffRoleId,
-	keepUserId,
+	keepUserIds,
 }: {
 	guildId: string;
 	threadId: string;
 	staffRoleId?: string | null;
-	keepUserId: string;
+	keepUserIds: (string | null | undefined)[];
 }) {
-	if (!staffRoleId) {
-		return;
+	const keep = new Set(uniqueIds(keepUserIds));
+
+	const botUserId = await getBotUserId();
+	if (botUserId) {
+		keep.add(botUserId);
 	}
 
-	const staffMembers = await getStoredStaffRoster(guildId, staffRoleId);
+	// The live thread member list is the source of truth. The cached staff
+	// roster is only a snapshot, so anybody added to the thread by hand (or
+	// before that snapshot was written) was never covered by it and stayed
+	// behind after a claim. It is now only used as a fallback when Discord
+	// cannot be read.
+	const threadMemberIds = await getThreadMemberIds(threadId);
+
+	let removableIds: string[];
+	if (threadMemberIds) {
+		removableIds = threadMemberIds;
+	} else if (staffRoleId) {
+		const staffMembers = await getStoredStaffRoster(guildId, staffRoleId);
+		removableIds = uniqueIds(staffMembers.map((member) => member.userId));
+	} else {
+		removableIds = [];
+	}
+
+	removableIds = removableIds.filter((userId) => !keep.has(userId));
+
 	await Promise.all(
-		staffMembers
-			.filter((member) => member.userId && member.userId !== keepUserId)
-			.map((member) =>
-				removeThreadMember(threadId, member.userId).catch((error) => {
-					console.warn(
-						`[Kaeru] Could not remove staff member ${member.userId} from claimed ticket:`,
-						error,
-					);
-				}),
-			),
+		removableIds.map((userId) =>
+			removeThreadMember(threadId, userId).catch((error) => {
+				console.warn(
+					`[Kaeru] Could not remove member ${userId} from claimed ticket:`,
+					error,
+				);
+			}),
+		),
 	);
+
+	return removableIds;
 }
 
 export async function sendTicketLogMessage({
