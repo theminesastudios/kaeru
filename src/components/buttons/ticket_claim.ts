@@ -79,7 +79,7 @@ const ticketClaimButton: InteractionComponent = {
 				});
 			}
 
-			const { removedMemberIds } = await claimTicketForStaff({
+			const { removedMemberIds, failedMemberIds } = await claimTicketForStaff({
 				ticketData,
 				threadId,
 				claimant: {
@@ -97,17 +97,26 @@ const ticketClaimButton: InteractionComponent = {
 							removedMemberIds.length === 1 ? "" : "s"
 						}`
 					: "";
+			const failedNote =
+				failedMemberIds.length > 0
+					? ` • ${getEmoji("error")} could not remove ${failedMemberIds
+							.map((userId) => `<@${userId}>`)
+							.join(", ")} — check my **Manage Threads** permission`
+					: "";
 
 			await sendTicketLogMessage({
 				threadId,
 				emojiPath: "people",
 				content:
 					`-# **<@!${actor.id}>** has __claimed__ this ticket ${formatRelativeTimestamp()}` +
-					removedNote,
+					removedNote +
+					failedNote,
 			});
 
 			return buttonInteraction.editReply({
-				content: `${getEmoji("people")} You claimed this ticket.`,
+				content:
+					`${getEmoji("people")} You claimed this ticket.` +
+					(failedNote ? `\n${failedNote.replace(" • ", "")}` : ""),
 			});
 		} catch (error) {
 			console.error("Error claiming ticket:", error);

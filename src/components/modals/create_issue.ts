@@ -18,6 +18,7 @@ import {
 	addActiveTicketForUser,
 	assignRandomStaffMember,
 	buildTicketManagementRowsJson,
+	trackThreadMembers,
 	validateTicketCreateLimit,
 } from "../../utils/ticketControls.ts";
 import { summarizeTicketTitle } from "../../utils/ticketTitle.ts";
@@ -302,6 +303,14 @@ const createIssueModal: InteractionModal = {
 					userTicketData,
 				}),
 				db.delete(`pendingTicketCreate:${user.id}`),
+			]);
+
+			// The thread document above is written without the tracked members, so
+			// re-record whoever the bot pulled in to keep a later claim able to
+			// clean the thread up even when the live member list is unreadable.
+			await trackThreadMembers(thread.id, [
+				user.id,
+				...(initialClaim?.claimedById ? [initialClaim.claimedById] : []),
 			]);
 
 			void starterMessage;
