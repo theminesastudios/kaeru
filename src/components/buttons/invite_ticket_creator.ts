@@ -5,8 +5,8 @@ import type {
 	MessageComponentInteraction,
 } from "@minesa-org/mini-interaction";
 import { db } from "../../utils/database.ts";
-import { fetchDiscord } from "../../utils/discord.ts";
 import { getEmoji } from "../../utils/index.ts";
+import { addThreadMember } from "../../utils/ticketControls.ts";
 
 const inviteTicketCreatorButton: InteractionComponent = {
 	customId: "ticket:invite_creator",
@@ -45,14 +45,7 @@ const inviteTicketCreatorButton: InteractionComponent = {
 				});
 			}
 
-			await fetchDiscord(
-				`/channels/${threadId}/thread-members/${userId}`,
-				process.env.DISCORD_BOT_TOKEN!,
-				true,
-				"PUT",
-				null,
-				5000,
-			);
+			await addThreadMember(threadId, userId);
 
 			return buttonInteraction.editReply({
 				content: `${getEmoji("seal")} Invited <@${userId}> to this ticket thread.`,

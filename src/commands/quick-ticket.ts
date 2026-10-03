@@ -15,8 +15,10 @@ import { db } from "../utils/database.ts";
 import { fetchDiscord } from "../utils/discord.ts";
 import { getEmoji, sendAlertMessage } from "../utils/index.ts";
 import {
+	addThreadMember,
 	assignRandomStaffMember,
 	buildTicketManagementRowsJson,
+	trackThreadMembers,
 } from "../utils/ticketControls.ts";
 
 const GUILD_TEXT_CHANNEL = 0;
@@ -105,12 +107,7 @@ const quickTicket: InteractionCommand = {
 				},
 			);
 
-			await fetchDiscord(
-				`/channels/${thread.id}/thread-members/${user.id}`,
-				process.env.DISCORD_BOT_TOKEN!,
-				true,
-				"PUT",
-			);
+			await addThreadMember(thread.id, user.id);
 
 			const ticketId = Date.now().toString();
 			const quotedMessage = formatQuotedMessage(message.content);
@@ -186,6 +183,13 @@ const quickTicket: InteractionCommand = {
 				db.set(`thread:${thread.id}`, {
 					ticketId,
 				}),
+			]);
+
+			// The thread document above is written without the tracked members, so
+			// re-record them here to keep a later claim able to clean up.
+			await trackThreadMembers(thread.id, [
+				user.id,
+				...(initialClaim?.claimedById ? [initialClaim.claimedById] : []),
 			]);
 
 			return interaction.editReply({

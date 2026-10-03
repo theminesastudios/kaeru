@@ -1,3 +1,15 @@
+// Lets callers branch on the Discord status code instead of matching on the
+// message text (e.g. "404" means the thread member was not there at all).
+export class DiscordApiError extends Error {
+	status: number;
+
+	constructor(status: number, message: string) {
+		super(message);
+		this.name = "DiscordApiError";
+		this.status = status;
+	}
+}
+
 export async function fetchDiscord(
 	endpoint: string,
 	token: string,
@@ -24,7 +36,10 @@ export async function fetchDiscord(
 
 		if (!response.ok) {
 			const error = await response.text();
-			throw new Error(`Discord API error: ${response.status} ${error} (Method: ${method}, Endpoint: ${endpoint})`);
+			throw new DiscordApiError(
+				response.status,
+				`Discord API error: ${response.status} ${error} (Method: ${method}, Endpoint: ${endpoint})`,
+			);
 		}
 
 		if (response.status === 204) {
