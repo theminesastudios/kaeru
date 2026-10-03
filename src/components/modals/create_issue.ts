@@ -184,6 +184,7 @@ const createIssueModal: InteractionModal = {
 
 			const caseNumber = Number(counterData?.lastCaseNumber || 0) + 1;
 			const ticketTitle = await summarizeTicketTitle(description);
+			const ticketLabel = `#${caseNumber} - ${ticketTitle}`.slice(0, 100);
 
 			const thread = await fetchDiscord(
 				`/channels/${targetChannelId}/threads`,
@@ -191,7 +192,7 @@ const createIssueModal: InteractionModal = {
 				true,
 				"POST",
 				{
-					name: `#${caseNumber} - ${ticketTitle}`.slice(0, 100),
+					name: ticketLabel,
 					auto_archive_duration: 10080,
 					type: 12,
 				},
@@ -325,7 +326,8 @@ const createIssueModal: InteractionModal = {
 				.addComponent(
 					new TextDisplayBuilder().setContent(
 						`## ${getEmoji("ticket.create")} Ticket created${guildName ? ` in ${guildName}` : ""}!\n` +
-							`You can now continue with </send:1477601535692247294> in DMs.\n<#${thread.id}>`,
+							`You can now continue with </send:1477601535692247294> in DMs.\n` +
+							`\`${ticketLabel}\``,
 					),
 				);
 

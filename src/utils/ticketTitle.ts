@@ -32,6 +32,9 @@ export async function summarizeTicketTitle(description: string): Promise<string>
 export function cleanTicketTitle(input: string): string {
 	const title = input
 		.replace(/[\r\n]+/g, " ")
+		// Backticks are stripped everywhere, not just at the edges: this label is
+		// rendered inside a code quote, so a stray one would close it early.
+		.replaceAll("`", "")
 		.replace(/^["'`*\-:\s]+|["'`*\-:\s.?!]+$/g, "")
 		.replace(/\s+/g, " ")
 		.trim();

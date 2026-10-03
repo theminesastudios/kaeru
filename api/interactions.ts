@@ -1,9 +1,11 @@
-import { MiniInteraction, verifyAndParseInteraction } from "@minesa-org/mini-interaction";
 import {
-	InteractionResponseType,
+	AutocompleteContext,
+	MiniInteraction,
+	verifyAndParseInteraction,
+} from "@minesa-org/mini-interaction";
+import {
 	InteractionType,
 	type APIApplicationCommandAutocompleteInteraction,
-	type APIInteractionResponse,
 } from "discord-api-types/v10";
 import { getTranslationLanguageChoices } from "../src/utils/translationLanguages.js";
 import { getCreateServerAutocompleteChoices } from "../src/utils/createTicketFlow.js";
@@ -96,90 +98,44 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
 	return nodeHandler(req, res);
 }
 
-function handleAutocomplete(
+const TRANSLATE_COMMANDS = new Set(["çevir", "translate"]);
+const TRANSLATE_LANGUAGE_OPTIONS = new Set(["dil", "language"]);
+
+async function handleAutocomplete(
 	interaction: APIApplicationCommandAutocompleteInteraction,
-): APIInteractionResponse | Promise<APIInteractionResponse> {
-	if (["çevir", "translate"].includes(interaction.data.name)) {
-		const focusedOption = findFocusedOption(interaction.data.options);
-		if (!focusedOption || !["dil", "language"].includes(focusedOption.name)) {
-			return autocompleteResponse([]);
+) {
+	const autocomplete = new AutocompleteContext(interaction);
+	const focusedOption = autocomplete.getFocusedOption(false);
+
+	if (TRANSLATE_COMMANDS.has(interaction.data.name)) {
+		if (!focusedOption || !TRANSLATE_LANGUAGE_OPTIONS.has(focusedOption.name)) {
+			return autocomplete.respond([]);
 		}
 
-		return autocompleteResponse(
-			getTranslationLanguageChoices(
-				String(focusedOption.value ?? ""),
-				25,
-				interaction.locale,
-			),
+		return autocomplete.respond(
+			getTranslationLanguageChoices(focusedOption.value, 25, interaction.locale),
 		);
 	}
 
-	return handleTicketAutocomplete(interaction);
-}
-
-async function handleTicketAutocomplete(
-	interaction: APIApplicationCommandAutocompleteInteraction,
-): Promise<APIInteractionResponse> {
-	const focusedOption = findFocusedOption(interaction.data.options);
 	const user = interaction.user ?? interaction.member?.user;
 
 	if (!focusedOption || !user) {
-		return autocompleteResponse([]);
+		return autocomplete.respond([]);
 	}
 
 	if (interaction.data.name === "create" && focusedOption.name === "server") {
-		return autocompleteResponse(
-			await getCreateServerAutocompleteChoices(
-				user.id,
-				String(focusedOption.value ?? ""),
-			),
+		return autocomplete.respond(
+			await getCreateServerAutocompleteChoices(user.id, focusedOption.value),
 		);
 	}
 
 	if (interaction.data.name === "switch-ticket" && focusedOption.name === "ticket") {
-		return autocompleteResponse(
-			await getActiveTicketAutocompleteChoices(
-				user.id,
-				String(focusedOption.value ?? ""),
-			),
+		return autocomplete.respond(
+			await getActiveTicketAutocompleteChoices(user.id, focusedOption.value),
 		);
 	}
 
-	return autocompleteResponse([]);
-}
-
-function autocompleteResponse(
-	choices: Array<{
-		name: string;
-		value: string;
-		name_localizations?: Record<string, string>;
-	}>,
-): APIInteractionResponse {
-	return {
-		type: InteractionResponseType.ApplicationCommandAutocompleteResult,
-		data: {
-			choices,
-		},
-	};
-}
-
-function findFocusedOption(options: FocusableOption[] | undefined): FocusableOption | null {
-	if (!options) {
-		return null;
-	}
-
-	for (const option of options) {
-		if (option.focused) {
-			return option;
-		}
-
-		const nested = findFocusedOption(option.options);
-		if (nested) {
-			return nested;
-		}
-	}
-
-	return null;
+	return autocomplete.respond([]);
 }
 
 async function readRawBody(req: NodeRequest) {
@@ -239,10 +195,3 @@ function sendText(res: NodeResponse, statusCode: number, body: string) {
 	res.setHeader?.("Content-Type", "text/plain; charset=utf-8");
 	res.end(body);
 }
-
-type FocusableOption = {
-	name: string;
-	value?: string | number | boolean;
-	focused?: boolean;
-	options?: FocusableOption[];
-};
