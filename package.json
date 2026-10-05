@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "build": "tsx scripts/register.ts",
-    "production": "vercel --prod"
+    "production": "vercel --prod",
+    "typecheck": "tsc -b --noEmit",
+    "verify": "tsx scripts/verify-punishment.ts && tsx scripts/verify-modules.ts"
   },
   "keywords": [
     "discord",

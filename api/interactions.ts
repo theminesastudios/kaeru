@@ -10,6 +10,7 @@ import {
 import { getTranslationLanguageChoices } from "../src/utils/translationLanguages.js";
 import { getCreateServerAutocompleteChoices } from "../src/utils/createTicketFlow.js";
 import { getActiveTicketAutocompleteChoices } from "../src/utils/ticketControls.js";
+import { getPunishmentAutocompleteChoices } from "../src/commands/punishment.js";
 
 type HeaderMap =
 	| Record<string, string | string[] | undefined>
@@ -100,6 +101,24 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
 
 const TRANSLATE_COMMANDS = new Set(["çevir", "translate"]);
 const TRANSLATE_LANGUAGE_OPTIONS = new Set(["dil", "language"]);
+const PUNISHMENT_AUTOCOMPLETE_OPTIONS = new Set(["reason", "case"]);
+
+/**
+ * `/punishment forgive` autocompletes the *target's* cases, not the moderator's,
+ * so the user option typed in the same interaction has to be read back out.
+ */
+async function resolveForgiveTarget(
+	interaction: APIApplicationCommandAutocompleteInteraction,
+): Promise<string> {
+	const options = interaction.data.options ?? [];
+	for (const option of options) {
+		if (option.type === 2 /* User */ && "value" in option) {
+			return String(option.value);
+		}
+	}
+
+	return interaction.user?.id ?? "";
+}
 
 async function handleAutocomplete(
 	interaction: APIApplicationCommandAutocompleteInteraction,
@@ -132,6 +151,30 @@ async function handleAutocomplete(
 	if (interaction.data.name === "switch-ticket" && focusedOption.name === "ticket") {
 		return autocomplete.respond(
 			await getActiveTicketAutocompleteChoices(user.id, focusedOption.value),
+		);
+	}
+
+	// `/punishment` shares two autocomplete sources: prepared reasons for the
+	// `member` subcommand and the member's own cases for `forgive`.
+	if (interaction.data.name === "punishment") {
+		if (!PUNISHMENT_AUTOCOMPLETE_OPTIONS.has(focusedOption.name)) {
+			return autocomplete.respond([]);
+		}
+
+		const guildId = interaction.guild_id ?? null;
+		let ownerId = user.id;
+
+		if (focusedOption.name === "case" && focusedOption.subcommand === "forgive") {
+			ownerId = await resolveForgiveTarget(interaction);
+		}
+
+		return autocomplete.respond(
+			await getPunishmentAutocompleteChoices({
+				guildId,
+				userId: ownerId,
+				optionName: focusedOption.name,
+				query: focusedOption.value,
+			}),
 		);
 	}
 
