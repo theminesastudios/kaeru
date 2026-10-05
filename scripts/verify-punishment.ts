@@ -298,4 +298,110 @@ const cleanViewText = JSON.stringify(
 );
 assert.ok(cleanViewText.includes("clean record"), "view handles members with no cases");
 
+// --- 5. Message context menu surface ---------------------------------------
+const punishMessageModule = await import("../src/commands/punish-message.ts");
+const punishMessage = punishMessageModule.default;
+const {
+	PUNISH_MESSAGE_CUSTOM_REASON_VALUE,
+	buildMessagePunishPromptContainer,
+	buildMessagePunishReasonOptions,
+} = punishMessageModule;
+const punishMessagePayload = (
+	(punishMessage.data as { toJSON: () => unknown }).toJSON() as Record<string, any>
+);
+
+assert.equal(punishMessagePayload.name, "Punish Message");
+assert.equal(punishMessagePayload.type, 3, "must be a Message context menu command");
+// Context menus live outside the guild only when their context allows it, and a
+// punishment is meaningless in DMs.
+assert.deepEqual(punishMessagePayload.contexts, [0], "guild context only");
+assert.deepEqual(punishMessagePayload.integration_types, [0], "guild install only");
+
+const menuPerms = BigInt(punishMessagePayload.default_member_permissions);
+const menuExpected =
+	MiniPermFlags.KickMembers | MiniPermFlags.BanMembers | MiniPermFlags.ModerateMembers;
+assert.equal(menuPerms, menuExpected, "context menu must require the same permissions");
+assert.ok(punishMessagePayload.name.length <= 32, "context menu names cap at 32 characters");
+
+// Prepared reasons must always leave room for the custom-reason escape hatch.
+const manyReasons: PunishmentConfig = {
+	...config,
+	reasons: Array.from({ length: 40 }, (_, index) => ({
+		id: `r${index}`,
+		title: `Reason ${index}`,
+		detail: `Detail ${index}`,
+	})),
+};
+const options = buildMessagePunishReasonOptions(manyReasons);
+assert.equal(options.length, 25, "Discord allows at most 25 select options");
+assert.equal(
+	options[options.length - 1].value,
+	PUNISH_MESSAGE_CUSTOM_REASON_VALUE,
+	"the custom reason option must always be present",
+);
+assert.equal(
+	options.filter((option) => option.label.length > 100).length,
+	0,
+	"select option labels must fit Discord's 100 char limit",
+);
+
+assert.equal(
+	buildMessagePunishReasonOptions(config).length,
+	1,
+	"a server with no prepared reasons still gets the custom option",
+);
+
+// The prompt container must serialise with and without message text, and must
+// link back to the offending message.
+const pending = {
+	guildId: "1",
+	guildName: "Test Guild",
+	channelId: "9",
+	messageId: "10",
+	targetUserId: "2",
+	targetTag: "spammer",
+	preview: "buy my thing",
+	createdAt: Date.now(),
+};
+
+const promptJson = JSON.stringify(
+	buildMessagePunishPromptContainer({
+		pending,
+		record: makeRecord([punishCase]),
+		config,
+	}).toJSON(),
+);
+assert.ok(promptJson.includes("https://discord.com/channels/1/9/10"), "prompt links to the message");
+assert.ok(promptJson.includes("buy my thing"), "prompt quotes the message");
+assert.ok(promptJson.includes("2"), "prompt mentions the author id");
+
+const emptyPromptJson = JSON.stringify(
+	buildMessagePunishPromptContainer({
+		pending: { ...pending, preview: "" },
+		record: makeRecord([]),
+		config,
+	}).toJSON(),
+);
+assert.ok(emptyPromptJson.includes("no readable text"), "prompt handles an empty message");
+
+// Message text extraction: plain content, embeds and ComponentsV2 containers.
+const extracted = extractMessageTextFromMessage({
+	content: "plain message",
+	embeds: [{ title: "Embed title", description: "Embed body", fields: [{ name: "Rule", value: "Be nice" }] }],
+	components: [
+		{
+			type: 17, // container
+			components: [{ type: 10, content: "Rules inside a container" }],
+		},
+	],
+});
+assert.ok(extracted.includes("plain message"));
+assert.ok(extracted.includes("Embed title"));
+assert.ok(extracted.includes("Embed body"));
+assert.ok(extracted.includes("Rule: Be nice"));
+assert.ok(
+	extracted.includes("Rules inside a container"),
+	"text inside a ComponentsV2 container must be extracted",
+);
+
 console.log("punishment verification passed");
