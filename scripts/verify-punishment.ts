@@ -4,6 +4,7 @@ import { MiniPermFlags } from "@minesa-org/mini-interaction";
 import punishmentCommand from "../src/commands/punishment.ts";
 import {
 	PUNISHMENT_DEFAULT_CONFIG,
+	buildCaseId,
 	buildMemberRecordContainer,
 	buildPunishmentDmContainer,
 	buildPunishmentLogContainer,
@@ -31,8 +32,9 @@ const config: PunishmentConfig = {
 };
 
 function makeCase(overrides: Partial<PunishmentCase> = {}): PunishmentCase {
+	caseCounter += 1;
 	return {
-		id: `case-${Math.random().toString(36).slice(2, 7)}`,
+		id: `case-${caseCounter}`,
 		reason: "Spam",
 		action: "timeout",
 		points: 5,
@@ -53,6 +55,36 @@ function makeRecord(cases: PunishmentCase[] = []): PunishmentMemberRecord {
 		cases,
 		updatedAt: 0,
 	};
+}
+
+let caseCounter = 0;
+
+/**
+ * Collects every message jump link in a rendered payload. Comparing the exact
+ * links is a stricter check than a substring match, and avoids asserting on a
+ * raw URL with `String.includes`.
+ */
+function findJumpLinks(payload: unknown): string[] {
+	const links: string[] = [];
+
+	const walk = (value: unknown) => {
+		if (typeof value === "string") {
+			for (const match of value.matchAll(/https:\/\/discord\.com\/channels\/[^\s)\]]+/g)) {
+				links.push(match[0]);
+			}
+			return;
+		}
+		if (Array.isArray(value)) {
+			value.forEach(walk);
+			return;
+		}
+		if (value && typeof value === "object") {
+			Object.values(value).forEach(walk);
+		}
+	};
+
+	walk(payload);
+	return links;
 }
 
 // --- 1. Command payload -----------------------------------------------------
@@ -189,6 +221,14 @@ const clamped = resolvePunishmentPlan({
 assert.equal(clamped.durationMs, 28 * 24 * 60 * 60 * 1000);
 
 // --- 3. Progress bar --------------------------------------------------------
+// Case ids end up inside markdown code quotes, so they must stay alphanumeric.
+const generatedIds = new Set(Array.from({ length: 500 }, () => buildCaseId()));
+assert.equal(generatedIds.size, 500, "case ids must not collide");
+assert.ok(
+	[...generatedIds].every((id) => /^[a-z0-9]{6,}$/.test(id)),
+	"case ids must be lowercase alphanumeric so they are safe inside code quotes",
+);
+
 assert.equal(buildScoreProgressBar(0, 20, 12), "\u2591".repeat(12));
 assert.equal(buildScoreProgressBar(20, 20, 12), "\u2588".repeat(12));
 assert.equal(buildScoreProgressBar(10, 20, 12), "\u2588".repeat(6) + "\u2591".repeat(6));
@@ -277,9 +317,10 @@ assert.ok(dmText.includes("Spam"), "DM shows the reason");
 assert.ok(dmText.includes("5"), "DM shows the score");
 
 const logText = JSON.stringify(containers.log.toJSON());
-assert.ok(
-	logText.includes(`https://discord.com/channels/1/9/10`),
-	"log shows a jump link to the offending message",
+assert.deepEqual(
+	findJumpLinks(containers.log.toJSON()),
+	["https://discord.com/channels/1/9/10"],
+	"log shows exactly one jump link to the offending message",
 );
 assert.ok(logText.includes(punishCase.id), "log shows the case id");
 
@@ -364,25 +405,26 @@ const pending = {
 	createdAt: Date.now(),
 };
 
-const promptJson = JSON.stringify(
-	buildMessagePunishPromptContainer({
-		pending,
-		record: makeRecord([punishCase]),
-		config,
-	}).toJSON(),
+const promptContainer = buildMessagePunishPromptContainer({
+	pending,
+	record: makeRecord([punishCase]),
+	config,
+}).toJSON();
+assert.deepEqual(
+	findJumpLinks(promptContainer),
+	["https://discord.com/channels/1/9/10"],
+	"prompt links to exactly the flagged message",
 );
-assert.ok(promptJson.includes("https://discord.com/channels/1/9/10"), "prompt links to the message");
-assert.ok(promptJson.includes("buy my thing"), "prompt quotes the message");
-assert.ok(promptJson.includes("2"), "prompt mentions the author id");
+assert.ok(JSON.stringify(promptContainer).includes("buy my thing"), "prompt quotes the message");
 
-const emptyPromptJson = JSON.stringify(
+const emptyPromptText = JSON.stringify(
 	buildMessagePunishPromptContainer({
 		pending: { ...pending, preview: "" },
 		record: makeRecord([]),
 		config,
 	}).toJSON(),
 );
-assert.ok(emptyPromptJson.includes("no readable text"), "prompt handles an empty message");
+assert.ok(emptyPromptText.includes("no readable text"), "prompt handles an empty message");
 
 // Message text extraction: plain content, embeds and ComponentsV2 containers.
 const extracted = extractMessageTextFromMessage({

@@ -1075,7 +1075,10 @@ export function parseDurationInput(input: string): number | null {
 }
 
 export function buildCaseId() {
-	return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+	// `randomUUID` rather than `Math.random`: case ids are quoted back to
+	// moderators and used to pick which case to forgive, so they should not be
+	// guessable from a timestamp.
+	return `${Date.now().toString(36)}${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`;
 }
 
 /**
