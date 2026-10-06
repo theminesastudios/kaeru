@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { MiniPermFlags } from "@minesa-org/mini-interaction";
 
 import punishmentCommand from "../src/commands/punishment.ts";
@@ -12,6 +13,7 @@ import {
 	buildScoreProgressBar,
 	countActiveCases,
 	extractMessageTextFromMessage,
+	fetchRulesChannelText,
 	isForgiven,
 	resolvePunishmentPlan,
 } from "../src/utils/punishment.ts";
@@ -445,5 +447,113 @@ assert.ok(
 	extracted.includes("Rules inside a container"),
 	"text inside a ComponentsV2 container must be extracted",
 );
+
+// `/punishment setup` reads the rules channel with `fetchDiscord`, whose third
+// parameter (`isBot`) defaults to false and therefore sends `Bearer <token>`.
+// Discord answers 401 and every setup run failed, so assert the read really
+// authenticates as the bot instead of only asserting the shape of the code.
+const realFetch = globalThis.fetch;
+const realBotToken = process.env.DISCORD_BOT_TOKEN;
+const authHeaders: string[] = [];
+
+process.env.DISCORD_BOT_TOKEN = "test-bot-token";
+globalThis.fetch = (async (_input: unknown, init?: { headers?: Record<string, string> }) => {
+	authHeaders.push(init?.headers?.Authorization ?? "");
+	return new Response(
+		JSON.stringify([{ id: "1", content: "Rule 1: no harassment." }]),
+		{ status: 200, headers: { "Content-Type": "application/json" } },
+	);
+}) as typeof fetch;
+
+let scrapedRules = "";
+try {
+	scrapedRules = await fetchRulesChannelText("999");
+} finally {
+	globalThis.fetch = realFetch;
+	if (realBotToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
+	else process.env.DISCORD_BOT_TOKEN = realBotToken;
+}
+
+assert.ok(scrapedRules.includes("no harassment"), "rules read returns the channel text");
+assert.ok(
+	authHeaders.length > 0 && authHeaders.every((header) => header === "Bot test-bot-token"),
+	`every rules read must authenticate as the bot, saw: ${JSON.stringify(authHeaders)}`,
+);
+
+// Static guard for the rest of the call sites: a `fetchDiscord(...)` call that
+// forgets the `isBot` flag is a 401 waiting to happen, so require all of them.
+const botAuthCallSites = [
+	"src/utils/punishment.ts",
+	"src/commands/punish-message.ts",
+];
+
+function splitTopLevelArgs(argumentList: string): string[] {
+	const args: string[] = [];
+	let depth = 0;
+	let current = "";
+	let quote: string | null = null;
+
+	for (const character of argumentList) {
+		if (quote) {
+			current += character;
+			if (character === quote) quote = null;
+			continue;
+		}
+
+		if (character === '"' || character === "'" || character === "`") {
+			quote = character;
+			current += character;
+			continue;
+		}
+
+		if (character === "(" || character === "{" || character === "[") depth++;
+		else if (character === ")" || character === "}" || character === "]") depth--;
+
+		if (character === "," && depth === 0) {
+			args.push(current);
+			current = "";
+			continue;
+		}
+
+		current += character;
+	}
+
+	if (current.trim()) args.push(current);
+	return args;
+}
+
+for (const relativePath of botAuthCallSites) {
+	const source = readFileSync(new URL(relativePath, new URL("../", import.meta.url)), "utf8");
+	const unauthenticated: string[] = [];
+	let cursor = source.indexOf("fetchDiscord(");
+
+	while (cursor !== -1) {
+		const open = cursor + "fetchDiscord(".length;
+		// Start at 1: the call's own opening paren has already been consumed.
+		let depth = 1;
+		let end = open;
+
+		for (; end < source.length; end++) {
+			const character = source[end];
+			if (character === "(") depth++;
+			else if (character === ")" && --depth === 0) break;
+		}
+
+		const thirdArgument = splitTopLevelArgs(source.slice(open, end))[2]?.trim();
+		if (thirdArgument !== "true") {
+			unauthenticated.push(
+				`${relativePath}: ${source.slice(cursor, end + 1).replace(/\s+/g, " ")}`,
+			);
+		}
+
+		cursor = source.indexOf("fetchDiscord(", end + 1);
+	}
+
+	assert.equal(
+		unauthenticated.length,
+		0,
+		`fetchDiscord needs isBot=true (got: ${unauthenticated.join(" | ")})`,
+	);
+}
 
 console.log("punishment verification passed");
