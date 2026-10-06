@@ -863,10 +863,14 @@ export async function fetchRulesChannelText(channelId: string): Promise<string> 
 		const query = new URLSearchParams({ limit: String(PUNISHMENT_MESSAGE_PAGE_SIZE) });
 		if (before) query.set("before", before);
 
+		// `true` is the isBot flag. Without it fetchDiscord sends
+		// `Bearer <bot token>` and Discord answers 401, which is why reading
+		// the rules channel has to authenticate as the bot.
 		const messages = await fetchDiscord(
-			`/channels/${channelId}/messages?${query.toString()}`,
-			botToken(),
-		);
+				`/channels/${channelId}/messages?${query.toString()}`,
+				botToken(),
+				true,
+			);
 
 		if (!Array.isArray(messages) || messages.length === 0) break;
 

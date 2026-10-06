@@ -190,10 +190,10 @@ async function handleSetup(interaction: CommandInteraction, moderatorId: string)
 	const guildId = interaction.guild_id!;
 	const guild = await fetchGuild(guildId).catch(() => null);
 	const guildName = typeof guild?.name === "string" ? guild.name : "this server";
-	const explicitChannel = interaction.options.getChannel("channel");
+	const explicitChannelId = resolveSetupChannelId(interaction);
 
-	if (explicitChannel?.id) {
-		return runSetup({ interaction, guildId, guildName, channelId: explicitChannel.id, moderatorId });
+	if (explicitChannelId) {
+		return runSetup({ interaction, guildId, guildName, channelId: explicitChannelId, moderatorId });
 	}
 
 	const rulesChannelId = await findRulesChannelId(guildId).catch(() => null);
@@ -232,6 +232,23 @@ async function handleSetup(interaction: CommandInteraction, moderatorId: string)
 		);
 
 	return interaction.editReply({ components: [container, select] });
+}
+
+/**
+ * Resolves the optional `channel` override. `getChannel` only works when
+ * Discord puts the channel in `resolved`, and it leaves the channel out when
+ * the bot cannot see it — so fall back to the raw option value and let the
+ * read fail with a real API error instead of silently auto-detecting a
+ * different channel than the one the moderator picked.
+ */
+function resolveSetupChannelId(interaction: CommandInteraction): string | null {
+	const resolved = interaction.options.getChannel("channel");
+	if (resolved?.id) return resolved.id;
+
+	const raw = interaction.options.getRawOption("channel");
+	const rawId = raw && "value" in raw ? raw.value : null;
+
+	return typeof rawId === "string" && rawId.length > 0 ? rawId : null;
 }
 
 export async function runSetup({
@@ -322,6 +339,12 @@ export async function runSetup({
 		});
 	} catch (error) {
 		console.error("[Kaeru] /punishment setup failed:", error);
+
+		// Surface the underlying reason: "not working" is impossible to act on
+		// without knowing whether Discord refused the read or the AI call failed.
+		const rawReason = error instanceof Error ? error.message : String(error);
+		const reason = rawReason.length > 500 ? `${rawReason.slice(0, 500)}…` : rawReason;
+
 		return interaction.editReply({
 			components: [
 				new ContainerBuilder()
@@ -333,6 +356,7 @@ export async function runSetup({
 						new TextDisplayBuilder().setContent(
 							[
 								"Could not read the channel or prepare reasons.",
+								`-# **Reason:** ${reason}`,
 								"-# Check that I can view the channel and its history, then try again.",
 							].join("\n"),
 						),
