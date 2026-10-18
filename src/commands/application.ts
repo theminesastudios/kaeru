@@ -43,6 +43,25 @@ const QUESTION_TYPES: { name: string; value: ApplicationQuestionType }[] = [
 	{ name: "attachment", value: "attachment" },
 ];
 
+/**
+ * Slots are string choices rather than NUMBER options on purpose. Discord sends
+ * NUMBER values as floats (`1.0`), and api/interactions.ts verifies the
+ * signature against a re-serialised `req.body`, where that turns into `1`. The
+ * bytes no longer match, the request is rejected as unsigned and Discord shows
+ * "did not respond" without anything reaching the handler.
+ */
+function slotChoices(count: number) {
+	return Array.from({ length: count }, (_, index) => ({
+		name: String(index + 1),
+		value: String(index + 1),
+	}));
+}
+
+function getSlot(interaction: CommandInteraction, name: string) {
+	const value = Number(interaction.options.getString(name));
+	return Number.isInteger(value) && value > 0 ? value : null;
+}
+
 const applicationCommand: InteractionCommand = {
 	data: new CommandBuilder()
 		.setName("application")
@@ -59,13 +78,12 @@ const applicationCommand: InteractionCommand = {
 			sub
 				.setName("button")
 				.setDescription("Create or rename one of the five application buttons")
-				.addNumberOption((opt) =>
+				.addStringOption((opt) =>
 					opt
 						.setName("button")
 						.setDescription("Button slot")
 						.setRequired(true)
-						.setMinValue(1)
-						.setMaxValue(APPLICATION_MAX_BUTTONS),
+						.addChoices(...slotChoices(APPLICATION_MAX_BUTTONS)),
 				)
 				.addStringOption((opt) =>
 					opt
@@ -79,21 +97,19 @@ const applicationCommand: InteractionCommand = {
 			sub
 				.setName("question")
 				.setDescription("Add or replace a question on an application button")
-				.addNumberOption((opt) =>
+				.addStringOption((opt) =>
 					opt
 						.setName("button")
 						.setDescription("Button slot the question belongs to")
 						.setRequired(true)
-						.setMinValue(1)
-						.setMaxValue(APPLICATION_MAX_BUTTONS),
+						.addChoices(...slotChoices(APPLICATION_MAX_BUTTONS)),
 				)
-				.addNumberOption((opt) =>
+				.addStringOption((opt) =>
 					opt
 						.setName("slot")
 						.setDescription("Question position in the form")
 						.setRequired(true)
-						.setMinValue(1)
-						.setMaxValue(APPLICATION_MAX_QUESTIONS),
+						.addChoices(...slotChoices(APPLICATION_MAX_QUESTIONS)),
 				)
 				.addStringOption((opt) =>
 					opt
@@ -132,20 +148,18 @@ const applicationCommand: InteractionCommand = {
 			sub
 				.setName("remove")
 				.setDescription("Remove a whole button, or one of its questions")
-				.addNumberOption((opt) =>
+				.addStringOption((opt) =>
 					opt
 						.setName("button")
 						.setDescription("Button slot")
 						.setRequired(true)
-						.setMinValue(1)
-						.setMaxValue(APPLICATION_MAX_BUTTONS),
+						.addChoices(...slotChoices(APPLICATION_MAX_BUTTONS)),
 				)
-				.addNumberOption((opt) =>
+				.addStringOption((opt) =>
 					opt
 						.setName("question")
 						.setDescription("Question slot; leave empty to remove the whole button")
-						.setMinValue(1)
-						.setMaxValue(APPLICATION_MAX_QUESTIONS),
+						.addChoices(...slotChoices(APPLICATION_MAX_QUESTIONS)),
 				),
 		)
 		.addSubcommand((sub) =>
@@ -254,7 +268,7 @@ const applicationCommand: InteractionCommand = {
 		});
 
 		if (subcommand === "button") {
-			const slot = interaction.options.getNumber("button", true)!;
+			const slot = getSlot(interaction, "button")!;
 			const label = interaction.options.getString("label", true)!.trim();
 			const config = (await getApplicationConfig(guild.id)) ?? createEmptyApplicationConfig(guild.id);
 
@@ -275,8 +289,8 @@ const applicationCommand: InteractionCommand = {
 		}
 
 		if (subcommand === "question") {
-			const slot = interaction.options.getNumber("button", true)!;
-			const questionSlot = interaction.options.getNumber("slot", true)!;
+			const slot = getSlot(interaction, "button")!;
+			const questionSlot = getSlot(interaction, "slot")!;
 			const type = interaction.options.getString("type", true) as ApplicationQuestionType;
 			const label = interaction.options.getString("question", true)!.trim();
 			const description = interaction.options.getString("description")?.trim() || undefined;
@@ -323,8 +337,8 @@ const applicationCommand: InteractionCommand = {
 		}
 
 		if (subcommand === "remove") {
-			const slot = interaction.options.getNumber("button", true)!;
-			const questionSlot = interaction.options.getNumber("question");
+			const slot = getSlot(interaction, "button")!;
+			const questionSlot = getSlot(interaction, "question");
 			const config = await getApplicationConfig(guild.id);
 			const button = config?.buttons[slot - 1];
 
