@@ -404,7 +404,7 @@ const pending = {
 	targetUserId: "2",
 	targetTag: "spammer",
 	preview: "buy my thing",
-	createdAt: Date.now(),
+	savedAt: Date.now(),
 };
 
 const promptContainer = buildMessagePunishPromptContainer({

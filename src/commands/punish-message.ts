@@ -57,7 +57,12 @@ export type PendingMessagePunishment = {
 	targetUserId: string;
 	targetTag: string;
 	preview: string;
-	createdAt: number;
+	/**
+	 * Epoch ms. Deliberately not `createdAt`: MiniDatabase strips `createdAt` and
+	 * `updatedAt` on write, so that name would read back empty and every request
+	 * would look expired.
+	 */
+	savedAt: number;
 };
 
 type ReplyableInteraction = {
@@ -73,9 +78,9 @@ function pendingKey(moderatorId: string) {
 
 export async function savePendingMessagePunishment(
 	moderatorId: string,
-	pending: Omit<PendingMessagePunishment, "createdAt">,
+	pending: Omit<PendingMessagePunishment, "savedAt">,
 ) {
-	await db.set(pendingKey(moderatorId), { ...pending, createdAt: Date.now() });
+	await db.set(pendingKey(moderatorId), { ...pending, savedAt: Date.now() });
 }
 
 export async function getPendingMessagePunishment(
@@ -91,11 +96,11 @@ export async function getPendingMessagePunishment(
 	const channelId = typeof record.channelId === "string" ? record.channelId : null;
 	const messageId = typeof record.messageId === "string" ? record.messageId : null;
 	const targetUserId = typeof record.targetUserId === "string" ? record.targetUserId : null;
-	const createdAt = typeof record.createdAt === "number" ? record.createdAt : 0;
+	const savedAt = typeof record.savedAt === "number" ? record.savedAt : 0;
 
 	if (!guildId || !channelId || !messageId || !targetUserId) return null;
 
-	if (Date.now() - createdAt > PENDING_TTL_MS) {
+	if (Date.now() - savedAt > PENDING_TTL_MS) {
 		await db.delete(pendingKey(moderatorId)).catch(() => {});
 		return null;
 	}
@@ -105,7 +110,7 @@ export async function getPendingMessagePunishment(
 		channelId,
 		messageId,
 		targetUserId,
-		createdAt,
+		savedAt,
 		guildName: typeof record.guildName === "string" ? record.guildName : "this server",
 		targetTag: typeof record.targetTag === "string" ? record.targetTag : "",
 		preview: typeof record.preview === "string" ? record.preview : "",
@@ -351,7 +356,7 @@ async function handlePunishMessage(
 	const guildName = typeof guild?.name === "string" ? guild.name : "this server";
 	const channelId = targetMessage.channel_id ?? interaction.channel?.id ?? "";
 
-	const pending: Omit<PendingMessagePunishment, "createdAt"> = {
+	const pending: Omit<PendingMessagePunishment, "savedAt"> = {
 		guildId,
 		guildName,
 		channelId,
@@ -370,7 +375,7 @@ async function handlePunishMessage(
 
 	const components: Array<ContainerBuilder | ActionRowBuilder<MessageActionRowComponent>> = [
 		buildMessagePunishPromptContainer({
-			pending: { ...pending, createdAt: Date.now() },
+			pending: { ...pending, savedAt: Date.now() },
 			record,
 			config,
 		}),
