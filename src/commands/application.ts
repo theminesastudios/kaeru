@@ -29,6 +29,7 @@ import {
 	getActiveQuestions,
 	getApplicationConfig,
 	getPublishableButtons,
+	parseButtonEmoji,
 	parseQuestionOptions,
 	saveApplicationConfig,
 } from "../utils/application.ts";
@@ -77,7 +78,7 @@ const applicationCommand: InteractionCommand = {
 		.addSubcommand((sub) =>
 			sub
 				.setName("button")
-				.setDescription("Create or rename one of the five application buttons")
+				.setDescription("Create or edit one of the five application buttons")
 				.addStringOption((opt) =>
 					opt
 						.setName("button")
@@ -91,6 +92,12 @@ const applicationCommand: InteractionCommand = {
 						.setDescription("Button label, also used as the form title")
 						.setRequired(true)
 						.setMaxLength(45),
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("emoji")
+						.setDescription("Emoji for the button, e.g. 📝 or a custom emoji (empty keeps the current one)")
+						.setMaxLength(64),
 				),
 		)
 		.addSubcommand((sub) =>
@@ -270,11 +277,21 @@ const applicationCommand: InteractionCommand = {
 		if (subcommand === "button") {
 			const slot = getSlot(interaction, "button")!;
 			const label = interaction.options.getString("label", true)!.trim();
+			const emojiInput = interaction.options.getString("emoji")?.trim();
+			const emoji = parseButtonEmoji(emojiInput);
+
+			if (emojiInput && !emoji) {
+				return interaction.editReply({
+					content: `${getEmoji("error")} I could not read **${emojiInput}** as an emoji. Use a normal emoji or a custom one like \`<:name:123456789012345678>\`.`,
+				});
+			}
+
 			const config = (await getApplicationConfig(guild.id)) ?? createEmptyApplicationConfig(guild.id);
 
 			const existing = config.buttons[slot - 1];
 			config.buttons[slot - 1] = {
 				label,
+				emoji: emoji ?? existing?.emoji ?? null,
 				questions: existing?.questions ?? Array.from({ length: APPLICATION_MAX_QUESTIONS }, () => null),
 			};
 

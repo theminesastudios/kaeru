@@ -58,8 +58,11 @@ export type ApplicationQuestion = {
 	required: boolean;
 };
 
+export type ApplicationButtonEmoji = { id?: string; name: string; animated?: boolean };
+
 export type ApplicationButton = {
 	label: string;
+	emoji?: ApplicationButtonEmoji | null;
 	questions: (ApplicationQuestion | null)[];
 };
 
@@ -128,6 +131,35 @@ function stripStorageFields<T extends Record<string, unknown>>(value: T) {
 	return copy as T;
 }
 
+function normalizeEmoji(raw: unknown): ApplicationButtonEmoji | null {
+	if (!raw || typeof raw !== "object") return null;
+	const { id, name, animated } = raw as Record<string, unknown>;
+	if (typeof name !== "string" || name.length === 0) return null;
+	return {
+		name,
+		...(typeof id === "string" && id.length > 0 ? { id } : {}),
+		...(animated === true ? { animated: true } : {}),
+	};
+}
+
+/**
+ * Accepts a unicode emoji or a custom one pasted as `<:name:id>` / `<a:name:id>`.
+ * Returns null when the text is neither.
+ */
+export function parseButtonEmoji(raw: string | null | undefined): ApplicationButtonEmoji | null {
+	const value = raw?.trim();
+	if (!value) return null;
+
+	const custom = value.match(/^<(a?):(\w{2,32}):(\d{17,20})>$/);
+	if (custom) {
+		return { id: custom[3], name: custom[2], ...(custom[1] ? { animated: true } : {}) };
+	}
+
+	return /^\p{Extended_Pictographic}/u.test(value) || /^\p{Regional_Indicator}{2}$/u.test(value) || /^[0-9#*]\uFE0F?\u20E3$/u.test(value)
+		? { name: value }
+		: null;
+}
+
 function normalizeButtons(raw: unknown): (ApplicationButton | null)[] {
 	const source = Array.isArray(raw) ? raw : [];
 	return APPLICATION_SLOTS.map((_, index) => {
@@ -139,6 +171,7 @@ function normalizeButtons(raw: unknown): (ApplicationButton | null)[] {
 		const questions = Array.isArray(button.questions) ? button.questions : [];
 		return {
 			label: button.label,
+			emoji: normalizeEmoji(button.emoji),
 			questions: Array.from({ length: APPLICATION_MAX_QUESTIONS }, (_, questionIndex) => {
 				const question = questions[questionIndex];
 				return question && typeof question === "object" && typeof question.label === "string"
@@ -385,12 +418,13 @@ export function buildApplicationPanel(config: ApplicationConfig) {
 	);
 
 	const row = new ActionRowBuilder<MessageActionRowComponent>().addComponents(
-		...buttons.map(({ button, slot }) =>
-			new ButtonBuilder()
+		...buttons.map(({ button, slot }) => {
+			const builder = new ButtonBuilder()
 				.setCustomId(applicationApplyButtonId(slot))
 				.setLabel(button.label.slice(0, 80))
-				.setStyle(ButtonStyle.Primary),
-		),
+				.setStyle(ButtonStyle.Secondary);
+			return button.emoji ? builder.setEmoji(button.emoji) : builder;
+		}),
 	);
 
 	return {
