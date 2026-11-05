@@ -173,6 +173,7 @@ function createSubmitModal(slot: number): InteractionModal {
 				});
 			}
 
+			let messageId: string;
 			try {
 				const message = await sendDiscordMessageWithFiles(
 					"POST",
@@ -184,16 +185,26 @@ function createSubmitModal(slot: number): InteractionModal {
 					},
 					files,
 				);
-
-				await Promise.all([
-					saveApplicationRecord(message.id, record),
-					markPendingApplication(guildId, user.id, slot, message.id),
-				]);
+				messageId = message.id;
 			} catch (error) {
-				console.error("[application] Failed to send application for review:", error);
+				console.error(
+					`[application] Failed to post to review channel ${config.reviewChannelId} in guild ${guildId}:`,
+					error,
+				);
 				return interaction.editReply({
 					content: `${getEmoji("error")} Your application could not be delivered to the staff. Please try again later or contact a moderator.`,
 				});
+			}
+
+			// The message is already in the review channel, so a storage hiccup
+			// must not tell the applicant it failed (they would resend it).
+			try {
+				await Promise.all([
+					saveApplicationRecord(messageId, record),
+					markPendingApplication(guildId, user.id, slot, messageId),
+				]);
+			} catch (error) {
+				console.error("[application] Posted for review but failed to save the record:", error);
 			}
 
 			return interaction.editReply({
