@@ -184,7 +184,7 @@ const applicationCommand: InteractionCommand = {
 				.addStringOption((opt) =>
 					opt
 						.setName("options")
-						.setDescription("Checkbox/radio choices, separated by commas (or | if labels have commas)")
+						.setDescription("Choices split by , or |. Add a description with >, e.g. Yes > I agree | No > Not yet")
 						.setMaxLength(1000),
 				)
 				.addStringOption((opt) =>
@@ -393,7 +393,8 @@ const applicationCommand: InteractionCommand = {
 			const type = interaction.options.getString("type", true) as ApplicationQuestionType;
 			const label = interaction.options.getString("question", true)!.trim();
 			const description = interaction.options.getString("description")?.trim() || undefined;
-			const options = parseQuestionOptions(interaction.options.getString("options"));
+			const { options, descriptions } = parseQuestionOptions(interaction.options.getString("options"));
+			const hasOptions = type === "radio" || type === "checkbox";
 			const required = interaction.options.getString("required") !== "no";
 
 			const config = await getApplicationConfig(guild.id);
@@ -424,7 +425,8 @@ const applicationCommand: InteractionCommand = {
 				type,
 				label,
 				description,
-				options: type === "radio" || type === "checkbox" ? options : [],
+				options: hasOptions ? options : [],
+				...(hasOptions && descriptions.some(Boolean) ? { optionDescriptions: descriptions } : {}),
 				required,
 			};
 
