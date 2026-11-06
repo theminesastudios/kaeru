@@ -78,6 +78,7 @@ export type ApplicationQuestion = {
 	label: string;
 	description?: string;
 	options: string[];
+	optionDescriptions?: string[];
 	required: boolean;
 };
 
@@ -448,15 +449,28 @@ export function getPublishableButtons(config: ApplicationConfig) {
 
 /**
  * Splits the admin's option list. A pipe wins when present so labels can keep
- * their commas; otherwise commas separate the options.
+ * their commas; otherwise commas separate the options. `Label > Description`
+ * gives an option a description.
  */
 export function parseQuestionOptions(raw: string | null | undefined) {
-	if (!raw) return [];
+	const options: string[] = [];
+	const descriptions: string[] = [];
+	if (!raw) return { options, descriptions };
+
 	const separator = raw.includes("|") ? "|" : ",";
-	return raw
-		.split(separator)
-		.map((option) => option.trim().slice(0, 100))
-		.filter((option) => option.length > 0);
+	for (const part of raw.split(separator)) {
+		const [label = "", ...rest] = part.split(">");
+		const option = label.trim().slice(0, 100);
+		if (!option) continue;
+		options.push(option);
+		descriptions.push(rest.join(">").trim().slice(0, 100));
+	}
+	return { options, descriptions };
+}
+
+function optionDescription(question: ApplicationQuestion, index: number) {
+	const description = question.optionDescriptions?.[index];
+	return description ? { description } : {};
 }
 
 export function describeQuestionType(type: ApplicationQuestionType) {
@@ -656,6 +670,7 @@ export function buildPageModal(pageSlot: number, page: ApplicationPage, previous
 							...question.options.map((option, optionIndex) => ({
 								label: option,
 								value: String(optionIndex),
+								...optionDescription(question, optionIndex),
 								...(before === option ? { default: true } : {}),
 							})),
 						),
@@ -681,6 +696,7 @@ export function buildPageModal(pageSlot: number, page: ApplicationPage, previous
 							...question.options.map((option, optionIndex) => ({
 								label: option,
 								value: String(optionIndex),
+								...optionDescription(question, optionIndex),
 								...(picked.has(option) ? { default: true } : {}),
 							})),
 						),
