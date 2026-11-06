@@ -10,11 +10,14 @@ import { getInteractionUser } from "../../utils/ticketControls.ts";
 import {
 	APPLICATION_SLOTS,
 	applicationApplyButtonId,
-	buildApplicationModal,
-	getActiveQuestions,
+	buildApplicationForm,
+	createApplicationDraft,
+	getActivePages,
 	getApplicationConfig,
+	getApplicationDraft,
 	hasPendingApplication,
 	isUserAuthorized,
+	saveApplicationDraft,
 } from "../../utils/application.ts";
 
 function createApplyButton(slot: number): InteractionComponent {
@@ -28,18 +31,16 @@ function createApplyButton(slot: number): InteractionComponent {
 
 			if (!guildId || !user) return;
 
-			// A modal has to be the first response, so every check runs before
-			// anything is deferred and they all run in parallel to stay well
-			// inside the auto-defer window.
-			const [config, authorized, pending] = await Promise.all([
+			const [config, authorized, pending, existingDraft] = await Promise.all([
 				getApplicationConfig(guildId),
 				isUserAuthorized(user.id),
 				hasPendingApplication(guildId, user.id, slot),
+				getApplicationDraft(guildId, user.id),
 			]);
 
 			const button = config?.buttons[slot - 1];
 
-			if (!config?.reviewChannelId || !button || getActiveQuestions(button).length === 0) {
+			if (!config?.reviewChannelId || !button || getActivePages(button).length === 0) {
 				return buttonInteraction.reply({
 					content: `${getEmoji("error")} This application is no longer available.`,
 					flags: InteractionFlags.Ephemeral,
@@ -60,7 +61,15 @@ function createApplyButton(slot: number): InteractionComponent {
 				});
 			}
 
-			return buttonInteraction.showModal(buildApplicationModal(slot, button));
+			// Coming back to the same position resumes the answers given so far;
+			// picking another position starts over.
+			const draft = existingDraft?.slot === slot ? existingDraft : createApplicationDraft(slot);
+			await saveApplicationDraft(guildId, user.id, draft);
+
+			return buttonInteraction.reply({
+				components: buildApplicationForm(button, draft),
+				flags: [InteractionFlags.Ephemeral, InteractionFlags.IsComponentsV2],
+			});
 		},
 	};
 }

@@ -20,12 +20,16 @@ import { fetchDiscord } from "../utils/discord.ts";
 import { getEmoji, sendAlertMessage } from "../utils/index.ts";
 import {
 	APPLICATION_MAX_BUTTONS,
+	APPLICATION_MAX_PAGES,
 	APPLICATION_MAX_QUESTIONS,
 	APPLICATION_SETUP_MODAL_ID,
 	buildApplicationPanel,
 	createEmptyApplicationConfig,
+	createEmptyPage,
 	deleteApplicationConfig,
 	describeQuestionType,
+	formatEmoji,
+	getActivePages,
 	getActiveQuestions,
 	getApplicationConfig,
 	getPublishableButtons,
@@ -98,6 +102,38 @@ const applicationCommand: InteractionCommand = {
 						.setName("emoji")
 						.setDescription("Emoji for the button, e.g. 📝 or a custom emoji (empty keeps the current one)")
 						.setMaxLength(64),
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("description")
+						.setDescription("Text shown under the title on the form (empty keeps the current one)")
+						.setMaxLength(300),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("page")
+				.setDescription("Create or rename a page (section) of an application form")
+				.addStringOption((opt) =>
+					opt
+						.setName("button")
+						.setDescription("Button slot the page belongs to")
+						.setRequired(true)
+						.addChoices(...slotChoices(APPLICATION_MAX_BUTTONS)),
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("page")
+						.setDescription("Page position in the form")
+						.setRequired(true)
+						.addChoices(...slotChoices(APPLICATION_MAX_PAGES)),
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("title")
+						.setDescription("Page title, e.g. Information or Experience")
+						.setRequired(true)
+						.setMaxLength(45),
 				),
 		)
 		.addSubcommand((sub) =>
@@ -113,8 +149,15 @@ const applicationCommand: InteractionCommand = {
 				)
 				.addStringOption((opt) =>
 					opt
+						.setName("page")
+						.setDescription("Page the question belongs to (created if it does not exist yet)")
+						.setRequired(true)
+						.addChoices(...slotChoices(APPLICATION_MAX_PAGES)),
+				)
+				.addStringOption((opt) =>
+					opt
 						.setName("slot")
-						.setDescription("Question position in the form")
+						.setDescription("Question position on the page")
 						.setRequired(true)
 						.addChoices(...slotChoices(APPLICATION_MAX_QUESTIONS)),
 				)
@@ -154,7 +197,7 @@ const applicationCommand: InteractionCommand = {
 		.addSubcommand((sub) =>
 			sub
 				.setName("remove")
-				.setDescription("Remove a whole button, or one of its questions")
+				.setDescription("Remove a whole button, one of its pages, or one question")
 				.addStringOption((opt) =>
 					opt
 						.setName("button")
@@ -164,8 +207,14 @@ const applicationCommand: InteractionCommand = {
 				)
 				.addStringOption((opt) =>
 					opt
+						.setName("page")
+						.setDescription("Page slot; leave empty to remove the whole button")
+						.addChoices(...slotChoices(APPLICATION_MAX_PAGES)),
+				)
+				.addStringOption((opt) =>
+					opt
 						.setName("question")
-						.setDescription("Question slot; leave empty to remove the whole button")
+						.setDescription("Question slot on that page; leave empty to remove the whole page")
 						.addChoices(...slotChoices(APPLICATION_MAX_QUESTIONS)),
 				),
 		)
@@ -277,6 +326,7 @@ const applicationCommand: InteractionCommand = {
 		if (subcommand === "button") {
 			const slot = getSlot(interaction, "button")!;
 			const label = interaction.options.getString("label", true)!.trim();
+			const description = interaction.options.getString("description")?.trim();
 			const emojiInput = interaction.options.getString("emoji")?.trim();
 			const emoji = parseButtonEmoji(emojiInput);
 
@@ -291,22 +341,54 @@ const applicationCommand: InteractionCommand = {
 			const existing = config.buttons[slot - 1];
 			config.buttons[slot - 1] = {
 				label,
+				description: description ?? existing?.description ?? "",
 				emoji: emoji ?? existing?.emoji ?? null,
-				questions: existing?.questions ?? Array.from({ length: APPLICATION_MAX_QUESTIONS }, () => null),
+				pages: existing?.pages ?? Array.from({ length: APPLICATION_MAX_PAGES }, () => null),
 			};
 
 			await saveApplicationConfig(config);
 
 			return interaction.editReply({
 				content:
-					`${getEmoji("seal")} Button **${slot}** is now **${label}**.` +
-					(existing ? "" : `\nAdd questions with \`/application question button:${slot}\`.`) +
+					`${getEmoji("seal")} Button **${slot}** is now ${formatEmoji(config.buttons[slot - 1]!.emoji)} **${label}**.` +
+					(existing
+						? ""
+						: `\nAdd pages with \`/application page button:${slot}\` and questions with \`/application question button:${slot}\`.`) +
+					publishHint(config),
+			});
+		}
+
+		if (subcommand === "page") {
+			const slot = getSlot(interaction, "button")!;
+			const pageSlot = getSlot(interaction, "page")!;
+			const title = interaction.options.getString("title", true)!.trim();
+
+			const config = await getApplicationConfig(guild.id);
+			const button = config?.buttons[slot - 1];
+
+			if (!config || !button) {
+				return interaction.editReply({
+					content: `${getEmoji("error")} Button **${slot}** does not exist yet. Create it with \`/application button button:${slot}\` first.`,
+				});
+			}
+
+			const existing = button.pages[pageSlot - 1];
+			button.pages[pageSlot - 1] = existing ? { ...existing, title } : createEmptyPage(title);
+			await saveApplicationConfig(config);
+
+			return interaction.editReply({
+				content:
+					`${getEmoji("seal")} Page **${pageSlot}** on **${button.label}** is now **${title}**.` +
+					(existing
+						? ""
+						: `\nAdd questions with \`/application question button:${slot} page:${pageSlot}\`.`) +
 					publishHint(config),
 			});
 		}
 
 		if (subcommand === "question") {
 			const slot = getSlot(interaction, "button")!;
+			const pageSlot = getSlot(interaction, "page")!;
 			const questionSlot = getSlot(interaction, "slot")!;
 			const type = interaction.options.getString("type", true) as ApplicationQuestionType;
 			const label = interaction.options.getString("question", true)!.trim();
@@ -335,7 +417,10 @@ const applicationCommand: InteractionCommand = {
 				});
 			}
 
-			button.questions[questionSlot - 1] = {
+			const page = button.pages[pageSlot - 1] ?? createEmptyPage(`Page ${pageSlot}`);
+			button.pages[pageSlot - 1] = page;
+
+			page.questions[questionSlot - 1] = {
 				type,
 				label,
 				description,
@@ -347,7 +432,7 @@ const applicationCommand: InteractionCommand = {
 
 			return interaction.editReply({
 				content:
-					`${getEmoji("seal")} Question **${questionSlot}** on **${button.label}** saved as a ${describeQuestionType(
+					`${getEmoji("seal")} Question **${questionSlot}** on **${button.label} › ${page.title}** saved as a ${describeQuestionType(
 						type,
 					).toLowerCase()} question.` + publishHint(config),
 			});
@@ -355,6 +440,7 @@ const applicationCommand: InteractionCommand = {
 
 		if (subcommand === "remove") {
 			const slot = getSlot(interaction, "button")!;
+			const pageSlot = getSlot(interaction, "page");
 			const questionSlot = getSlot(interaction, "question");
 			const config = await getApplicationConfig(guild.id);
 			const button = config?.buttons[slot - 1];
@@ -365,18 +451,42 @@ const applicationCommand: InteractionCommand = {
 				});
 			}
 
-			if (questionSlot) {
-				if (!button.questions[questionSlot - 1]) {
+			if (questionSlot && !pageSlot) {
+				return interaction.editReply({
+					content: `${getEmoji("error")} Pick the **page** the question is on as well.`,
+				});
+			}
+
+			if (pageSlot) {
+				const page = button.pages[pageSlot - 1];
+				if (!page) {
 					return interaction.editReply({
-						content: `${getEmoji("error")} **${button.label}** has no question in slot **${questionSlot}**.`,
+						content: `${getEmoji("error")} **${button.label}** has no page in slot **${pageSlot}**.`,
 					});
 				}
 
-				button.questions[questionSlot - 1] = null;
+				if (questionSlot) {
+					if (!page.questions[questionSlot - 1]) {
+						return interaction.editReply({
+							content: `${getEmoji("error")} **${page.title}** has no question in slot **${questionSlot}**.`,
+						});
+					}
+
+					page.questions[questionSlot - 1] = null;
+					await saveApplicationConfig(config);
+
+					return interaction.editReply({
+						content:
+							`${getEmoji("seal")} Removed question **${questionSlot}** from **${button.label} › ${page.title}**.` +
+							publishHint(config),
+					});
+				}
+
+				button.pages[pageSlot - 1] = null;
 				await saveApplicationConfig(config);
 
 				return interaction.editReply({
-					content: `${getEmoji("seal")} Removed question **${questionSlot}** from **${button.label}**.` + publishHint(config),
+					content: `${getEmoji("seal")} Removed the **${page.title}** page from **${button.label}**.` + publishHint(config),
 				});
 			}
 
@@ -399,24 +509,36 @@ const applicationCommand: InteractionCommand = {
 			const buttonLines = config.buttons.map((button, index) => {
 				if (!button) return `**${index + 1}.** *empty*`;
 
-				const questions = getActiveQuestions(button);
-				const questionLines = button.questions
-					.map((question, questionIndex) => {
-						if (!question) return null;
-						const extras = [
-							describeQuestionType(question.type),
-							question.required ? "required" : "optional",
-							question.options.length > 0 ? question.options.join(", ") : null,
-						]
-							.filter(Boolean)
-							.join(" • ");
-						return `  - ${questionIndex + 1}. ${question.label} — *${extras}*`;
+				const emoji = formatEmoji(button.emoji);
+				const pageLines = button.pages
+					.map((page, pageIndex) => {
+						if (!page) return null;
+
+						const questionLines = page.questions
+							.map((question, questionIndex) => {
+								if (!question) return null;
+								const extras = [
+									describeQuestionType(question.type),
+									question.required ? "required" : "optional",
+									question.options.length > 0 ? question.options.join(", ") : null,
+								]
+									.filter(Boolean)
+									.join(" • ");
+								return `    - ${questionIndex + 1}. ${question.label} — *${extras}*`;
+							})
+							.filter(Boolean);
+
+						return (
+							`  - Page ${pageIndex + 1}: **${page.title}** — ${getActiveQuestions(page).length}/${APPLICATION_MAX_QUESTIONS} questions` +
+							(questionLines.length > 0 ? `\n${questionLines.join("\n")}` : "")
+						);
 					})
 					.filter(Boolean);
 
 				return (
-					`**${index + 1}. ${button.label}** — ${questions.length}/${APPLICATION_MAX_QUESTIONS} questions` +
-					(questionLines.length > 0 ? `\n${questionLines.join("\n")}` : "")
+					`**${index + 1}. ${emoji ? `${emoji} ` : ""}${button.label}** — ${getActivePages(button).length}/${APPLICATION_MAX_PAGES} pages with questions` +
+					(button.description ? `\n  -# ${button.description.split("\n")[0]}` : "") +
+					(pageLines.length > 0 ? `\n${pageLines.join("\n")}` : "")
 				);
 			});
 
@@ -437,7 +559,7 @@ const applicationCommand: InteractionCommand = {
 							}`,
 					),
 				)
-				.addComponent(new TextDisplayBuilder().setContent(buttonLines.join("\n").slice(0, 3500)));
+				.addComponent(new TextDisplayBuilder().setContent(buttonLines.join("\n").slice(0, 3400)));
 
 			return interaction.editReply({ components: [container] });
 		}
@@ -453,7 +575,7 @@ const applicationCommand: InteractionCommand = {
 
 			if (getPublishableButtons(config).length === 0) {
 				return interaction.editReply({
-					content: `${getEmoji("error")} Add at least one button with a question before publishing.`,
+					content: `${getEmoji("error")} Add at least one button with a page that has a question before publishing.`,
 				});
 			}
 

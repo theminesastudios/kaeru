@@ -5,8 +5,9 @@ import { getEmoji } from "../../utils/index.ts";
 import { getInteractionUser } from "../../utils/ticketControls.ts";
 import {
 	APPLICATION_APPROVE_MODAL_ID,
+	APPLICATION_DECISION_NOTE_FIELD_ID,
+	APPLICATION_DECISION_NOTIFY_FIELD_ID,
 	APPLICATION_DECLINE_MODAL_ID,
-	TRANSCRIPT_FILENAME,
 	buildReviewComponents,
 	canReviewApplications,
 	clearPendingApplication,
@@ -55,25 +56,28 @@ function createDecisionModal(decision: "approved" | "declined"): InteractionModa
 
 			if (record.status !== "pending") {
 				return interaction.editReply({
-					content: `${getEmoji("error")} <@${record.reviewerId}> already ${record.status} this application.`,
+					content: `${getEmoji("error")} <@${record.reviewerId}> already ${record.status === "declined" ? "rejected" : "approved"} this application.`,
 				});
 			}
 
 			record.status = decision;
 			record.reviewerId = reviewer.id;
 			record.decidedAt = Date.now();
-			record.note = interaction.getTextFieldValue("note")?.trim() || null;
+			record.note = interaction.getTextFieldValue(APPLICATION_DECISION_NOTE_FIELD_ID)?.trim() || null;
+			record.notified = interaction.getCheckboxValue(APPLICATION_DECISION_NOTIFY_FIELD_ID) === true;
 			record.dmDelivered = false;
 
 			// Claim the decision before the slower DM call, so a second
 			// reviewer submitting at the same time sees it as already decided.
 			await saveApplicationRecord(message.id, record);
 
-			try {
-				await sendApplicationDecisionDm(record);
-				record.dmDelivered = true;
-			} catch (error) {
-				console.warn("[application] Failed to DM applicant:", error);
+			if (record.notified) {
+				try {
+					await sendApplicationDecisionDm(record);
+					record.dmDelivered = true;
+				} catch (error) {
+					console.warn("[application] Failed to DM applicant:", error);
+				}
 			}
 
 			await Promise.all([
@@ -82,17 +86,13 @@ function createDecisionModal(decision: "approved" | "declined"): InteractionModa
 			]);
 
 			try {
-				const hasTranscript = (message.attachments ?? []).some(
-					(attachment) => attachment.filename === TRANSCRIPT_FILENAME,
-				);
-
 				await fetchDiscord(
 					`/channels/${message.channel_id}/messages/${message.id}`,
 					process.env.DISCORD_BOT_TOKEN!,
 					true,
 					"PATCH",
 					{
-						components: buildReviewComponents(record, { hasTranscript }),
+						components: buildReviewComponents(record),
 						// Listing the existing ids keeps the uploaded files, so the
 						// redrawn components can keep pointing at them.
 						attachments: (message.attachments ?? []).map((attachment) => ({ id: attachment.id })),
@@ -103,12 +103,15 @@ function createDecisionModal(decision: "approved" | "declined"): InteractionModa
 				console.error("[application] Failed to update review message:", error);
 			}
 
-			const verb = decision === "approved" ? "approved" : "declined";
-			return interaction.editReply({
-				content: record.dmDelivered
-					? `${getEmoji("seal")} Application ${verb}. <@${record.userId}> was notified in DMs.`
-					: `${getEmoji("error")} Application ${verb}, but I could not DM <@${record.userId}>. They may have removed Kaeru from their apps.`,
-			});
+			const verb = decision === "approved" ? "approved" : "rejected";
+			let content = `${getEmoji("seal")} Application #${record.ref} ${verb}.`;
+			if (record.notified) {
+				content = record.dmDelivered
+					? `${content} <@${record.userId}> was notified in DMs.`
+					: `${getEmoji("error")} Application #${record.ref} ${verb}, but I could not DM <@${record.userId}>. They may have removed Kaeru from their apps.`;
+			}
+
+			return interaction.editReply({ content });
 		},
 	};
 }
