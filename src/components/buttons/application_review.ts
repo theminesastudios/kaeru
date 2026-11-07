@@ -13,6 +13,7 @@ import type {
 	InteractionComponent,
 	MessageComponentInteraction,
 } from "@minesa-org/mini-interaction";
+import { InteractionResponseType, MessageFlags } from "discord-api-types/v10";
 import { getEmoji } from "../../utils/index.ts";
 import {
 	APPLICATION_APPROVE_BUTTON_ID,
@@ -77,6 +78,17 @@ function createDecisionButton(decision: "approve" | "decline"): InteractionCompo
 	};
 }
 
+/**
+ * Posts a private note after the button was already acknowledged. `reply`
+ * would overwrite the review message here, so this goes out as a follow-up.
+ */
+async function sendEphemeralNotice(interaction: ReviewInteraction, content: string) {
+	await interaction.sendFollowUp?.(interaction.token, {
+		type: InteractionResponseType.ChannelMessageWithSource,
+		data: { content, flags: MessageFlags.Ephemeral },
+	});
+}
+
 /** Switches the review message to another page of answers. */
 function createTabButton(page: number): InteractionComponent {
 	return {
@@ -88,26 +100,30 @@ function createTabButton(page: number): InteractionComponent {
 			const message = buttonInteraction.message;
 			if (!guildId || !message) return;
 
+			// Acknowledge first, exactly like the form's submit button, and edit
+			// afterwards. The reads below can take seconds on a cold instance, and
+			// work left to the library's timed auto-defer was not finishing there.
+			// An edit also throws Discord's real reason when it refuses the
+			// message, which the fallback below relies on.
+			const startedAt = Date.now();
+			buttonInteraction.deferUpdate();
+
 			const [config, record] = await Promise.all([
 				getApplicationConfig(guildId),
 				getApplicationRecord(message.id),
 			]);
+			console.log(`[application] Review tab ${page}: reads took ${Date.now() - startedAt}ms.`);
 
 			if (!canReviewApplications(buttonInteraction.member, config)) {
-				return buttonInteraction.reply({ content: NOT_A_REVIEWER, flags: InteractionFlags.Ephemeral });
+				return sendEphemeralNotice(buttonInteraction, NOT_A_REVIEWER);
 			}
 
 			if (!record || record.guildId !== guildId || !record.pages[page - 1]) {
-				return buttonInteraction.reply({
-					content: `${getEmoji("error")} This application is not stored anymore.`,
-					flags: InteractionFlags.Ephemeral,
-				});
+				return sendEphemeralNotice(
+					buttonInteraction,
+					`${getEmoji("error")} This application is not stored anymore.`,
+				);
 			}
-
-			// Acknowledge first and edit afterwards: a callback response gives no
-			// feedback when Discord rejects it ("did not respond in time"), while
-			// an edit throws the real reason, which lets the fallback below run.
-			buttonInteraction.deferUpdate();
 
 			record.viewPage = page - 1;
 			await saveApplicationRecord(message.id, record);
@@ -117,24 +133,28 @@ function createTabButton(page: number): InteractionComponent {
 			const attachments = (message.attachments ?? []).map((attachment) => ({ id: attachment.id }));
 
 			try {
-				return await buttonInteraction.editReply({
+				const response = await buttonInteraction.editReply({
 					components: buildReviewComponents(record),
 					attachments,
 					allowed_mentions: { parse: [] },
 				} as Parameters<ReviewInteraction["editReply"]>[0]);
+				console.log(`[application] Review tab ${page}: shown in ${Date.now() - startedAt}ms.`);
+				return response;
 			} catch (error) {
 				console.error(`[application] Failed to show review tab ${page} with inline files:`, error);
 			}
 
 			// Discord refused the inline previews: show the same page with the
 			// uploaded files as plain links so the tab still works.
-			return buttonInteraction.editReply({
+			const response = await buttonInteraction.editReply({
 				components: buildReviewComponents(record, {
 					attachmentLinks: reviewAttachmentLinks(message.attachments),
 				}),
 				attachments,
 				allowed_mentions: { parse: [] },
 			} as Parameters<ReviewInteraction["editReply"]>[0]);
+			console.log(`[application] Review tab ${page}: shown with file links in ${Date.now() - startedAt}ms.`);
+			return response;
 		},
 	};
 }
