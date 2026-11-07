@@ -26,9 +26,14 @@ if (!applicationId || !botToken) {
 	process.exit(0);
 }
 
+// The build only registers commands; it must not open a database connection.
+process.env.SKIP_DB_WARMUP = "1";
 const { mini } = await import("../api/interactions");
 
 await mini.registerCommands(botToken);
 await mini.registerMetadata(botToken, ROLE_CONNECTION_METADATA);
 
 console.log("Registration complete!");
+
+// Don't let a stray open handle keep the build step running.
+process.exit(0);

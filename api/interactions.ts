@@ -67,12 +67,18 @@ const nodeHandler = mini.createNodeHandler();
 // used to run inside the first button press, push it past the 2.5s auto-defer
 // window and make `showModal` fail ("interaction failed"). Starting it as soon
 // as the function loads overlaps it with signature checks and module loading.
-try {
-	void getDatabase()
-		.get("__warmup__")
-		.catch(() => null);
-} catch (error) {
-	console.warn("[Database] Warm-up skipped:", error instanceof Error ? error.message : error);
+//
+// `scripts/register.ts` imports this file at build time and sets SKIP_DB_WARMUP:
+// an open connection there keeps the build process alive and the deploy hangs
+// in BUILDING after "Registration complete!".
+if (!process.env.SKIP_DB_WARMUP) {
+	try {
+		void getDatabase()
+			.get("__warmup__")
+			.catch(() => null);
+	} catch (error) {
+		console.warn("[Database] Warm-up skipped:", error instanceof Error ? error.message : error);
+	}
 }
 
 export default async function handler(req: NodeRequest, res: NodeResponse) {
