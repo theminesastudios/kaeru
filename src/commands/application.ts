@@ -343,7 +343,7 @@ const applicationCommand: InteractionCommand = {
 					: InteractionFlags.Ephemeral,
 		});
 
-		const slotError = invalidSlot(interaction, ["button", "page", "slot", "question"]);
+		const slotError = invalidSlot(interaction, subcommand === "remove" ? ["button", "page", "question"] : ["button", "page", "slot"]);
 		if (slotError) {
 			return interaction.editReply({ content: `${getEmoji("error")} ${slotError}` });
 		}
