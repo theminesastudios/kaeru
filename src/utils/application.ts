@@ -510,6 +510,54 @@ export function describeQuestionType(type: ApplicationQuestionType) {
 	}
 }
 
+/**
+ * Autocomplete for the slot options of `/application`: every slot is listed with
+ * what is saved in it, so admins can tell filled slots from empty ones.
+ */
+export async function getApplicationAutocompleteChoices({
+	guildId,
+	optionName,
+	query,
+	selected,
+}: {
+	guildId: string | null;
+	optionName: "button" | "page" | "slot" | "question";
+	query: string;
+	selected: { button?: string; page?: string };
+}) {
+	const config = guildId ? await getApplicationConfig(guildId) : null;
+	const buttonSlot = Number(selected.button);
+	const pageSlot = Number(selected.page);
+	const button = Number.isInteger(buttonSlot) ? config?.buttons[buttonSlot - 1] : null;
+	const page = Number.isInteger(pageSlot) ? button?.pages[pageSlot - 1] : null;
+
+	const entries: string[] = [];
+	if (optionName === "button") {
+		for (let index = 0; index < APPLICATION_MAX_BUTTONS; index++) {
+			const entry = config?.buttons[index];
+			entries.push(entry ? `${formatEmoji(entry.emoji)} ${entry.label}`.trim() : "");
+		}
+	} else if (optionName === "page") {
+		for (let index = 0; index < APPLICATION_MAX_PAGES; index++) {
+			const entry = button?.pages[index];
+			entries.push(entry ? `${entry.title} (${getActiveQuestions(entry).length}/${APPLICATION_MAX_QUESTIONS} questions)` : "");
+		}
+	} else {
+		for (let index = 0; index < APPLICATION_MAX_QUESTIONS; index++) {
+			const entry = page?.questions[index];
+			entries.push(entry ? `${describeQuestionType(entry.type)}: ${entry.label}` : "");
+		}
+	}
+
+	const needle = query.trim().toLowerCase();
+	return entries
+		.map((text, index) => ({
+			name: truncate(`${index + 1} — ${text || "Empty"}`, 100),
+			value: String(index + 1),
+		}))
+		.filter((choice) => !needle || choice.name.toLowerCase().includes(needle));
+}
+
 const MANAGE_GUILD = 1n << 5n;
 
 /**

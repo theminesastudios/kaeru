@@ -53,22 +53,32 @@ const QUESTION_TYPES: { name: string; value: ApplicationQuestionType }[] = [
 ];
 
 /**
- * Slots are string choices rather than NUMBER options on purpose. Discord sends
- * NUMBER values as floats (`1.0`), and api/interactions.ts verifies the
- * signature against a re-serialised `req.body`, where that turns into `1`. The
- * bytes no longer match, the request is rejected as unsigned and Discord shows
- * "did not respond" without anything reaching the handler.
+ * Slots are strings (autocompleted as "1".."5") rather than NUMBER options on
+ * purpose. Discord sends NUMBER values as floats (`1.0`), and
+ * api/interactions.ts verifies the signature against a re-serialised
+ * `req.body`, where that turns into `1`. The bytes no longer match and the
+ * request is rejected as unsigned.
  */
-function slotChoices(count: number) {
-	return Array.from({ length: count }, (_, index) => ({
-		name: String(index + 1),
-		value: String(index + 1),
-	}));
-}
+const SLOT_LIMITS: Record<string, number> = {
+	button: APPLICATION_MAX_BUTTONS,
+	page: APPLICATION_MAX_PAGES,
+	slot: APPLICATION_MAX_QUESTIONS,
+	question: APPLICATION_MAX_QUESTIONS,
+};
 
 function getSlot(interaction: CommandInteraction, name: string) {
-	const value = Number(interaction.options.getString(name));
-	return Number.isInteger(value) && value > 0 ? value : null;
+	const raw = interaction.options.getString(name);
+	if (raw === null || raw === undefined) return null;
+	const value = Number(raw);
+	return Number.isInteger(value) && value > 0 && value <= SLOT_LIMITS[name] ? value : null;
+}
+
+function invalidSlot(interaction: CommandInteraction, names: string[]) {
+	const bad = names.find((name) => {
+		const raw = interaction.options.getString(name);
+		return raw !== null && raw !== undefined && getSlot(interaction, name) === null;
+	});
+	return bad ? `Pick **${bad}** from the list: a number from 1 to ${SLOT_LIMITS[bad]}.` : null;
 }
 
 const applicationCommand: InteractionCommand = {
@@ -92,7 +102,7 @@ const applicationCommand: InteractionCommand = {
 						.setName("button")
 						.setDescription("Button slot")
 						.setRequired(true)
-						.addChoices(...slotChoices(APPLICATION_MAX_BUTTONS)),
+						.setAutocomplete(true),
 				)
 				.addStringOption((opt) =>
 					opt
@@ -123,14 +133,14 @@ const applicationCommand: InteractionCommand = {
 						.setName("button")
 						.setDescription("Button slot the page belongs to")
 						.setRequired(true)
-						.addChoices(...slotChoices(APPLICATION_MAX_BUTTONS)),
+						.setAutocomplete(true),
 				)
 				.addStringOption((opt) =>
 					opt
 						.setName("page")
 						.setDescription("Page position in the form")
 						.setRequired(true)
-						.addChoices(...slotChoices(APPLICATION_MAX_PAGES)),
+						.setAutocomplete(true),
 				)
 				.addStringOption((opt) =>
 					opt
@@ -149,21 +159,21 @@ const applicationCommand: InteractionCommand = {
 						.setName("button")
 						.setDescription("Button slot the question belongs to")
 						.setRequired(true)
-						.addChoices(...slotChoices(APPLICATION_MAX_BUTTONS)),
+						.setAutocomplete(true),
 				)
 				.addStringOption((opt) =>
 					opt
 						.setName("page")
 						.setDescription("Page the question belongs to (created if it does not exist yet)")
 						.setRequired(true)
-						.addChoices(...slotChoices(APPLICATION_MAX_PAGES)),
+						.setAutocomplete(true),
 				)
 				.addStringOption((opt) =>
 					opt
 						.setName("slot")
 						.setDescription("Question position on the page")
 						.setRequired(true)
-						.addChoices(...slotChoices(APPLICATION_MAX_QUESTIONS)),
+						.setAutocomplete(true),
 				)
 				.addStringOption((opt) =>
 					opt
@@ -213,19 +223,19 @@ const applicationCommand: InteractionCommand = {
 						.setName("button")
 						.setDescription("Button slot")
 						.setRequired(true)
-						.addChoices(...slotChoices(APPLICATION_MAX_BUTTONS)),
+						.setAutocomplete(true),
 				)
 				.addStringOption((opt) =>
 					opt
 						.setName("page")
 						.setDescription("Page slot; leave empty to remove the whole button")
-						.addChoices(...slotChoices(APPLICATION_MAX_PAGES)),
+						.setAutocomplete(true),
 				)
 				.addStringOption((opt) =>
 					opt
 						.setName("question")
 						.setDescription("Question slot on that page; leave empty to remove the whole page")
-						.addChoices(...slotChoices(APPLICATION_MAX_QUESTIONS)),
+						.setAutocomplete(true),
 				),
 		)
 		.addSubcommand((sub) =>
@@ -332,6 +342,11 @@ const applicationCommand: InteractionCommand = {
 					? [InteractionFlags.Ephemeral, InteractionFlags.IsComponentsV2]
 					: InteractionFlags.Ephemeral,
 		});
+
+		const slotError = invalidSlot(interaction, ["button", "page", "slot", "question"]);
+		if (slotError) {
+			return interaction.editReply({ content: `${getEmoji("error")} ${slotError}` });
+		}
 
 		if (subcommand === "button") {
 			const slot = getSlot(interaction, "button")!;

@@ -10,6 +10,7 @@ import {
 import { getTranslationLanguageChoices } from "../src/utils/translationLanguages.js";
 import { getCreateServerAutocompleteChoices } from "../src/utils/createTicketFlow.js";
 import { getActiveTicketAutocompleteChoices } from "../src/utils/ticketControls.js";
+import { getApplicationAutocompleteChoices } from "../src/utils/application.js";
 import { getPunishmentAutocompleteChoices } from "../src/commands/punishment.js";
 
 type HeaderMap =
@@ -151,6 +152,31 @@ async function handleAutocomplete(
 	if (interaction.data.name === "switch-ticket" && focusedOption.name === "ticket") {
 		return autocomplete.respond(
 			await getActiveTicketAutocompleteChoices(user.id, focusedOption.value),
+		);
+	}
+
+	if (interaction.data.name === "application") {
+		const values: Record<string, string> = {};
+		for (const sub of interaction.data.options ?? []) {
+			if (sub.type === 1) {
+				for (const option of sub.options ?? []) {
+					if ("value" in option) values[option.name] = String(option.value);
+				}
+			}
+		}
+
+		const name = focusedOption.name;
+		if (name !== "button" && name !== "page" && name !== "slot" && name !== "question") {
+			return autocomplete.respond([]);
+		}
+
+		return autocomplete.respond(
+			await getApplicationAutocompleteChoices({
+				guildId: interaction.guild_id ?? null,
+				optionName: name,
+				query: focusedOption.value,
+				selected: { button: values.button, page: values.page },
+			}),
 		);
 	}
 
