@@ -717,10 +717,8 @@ export function buildPageModal(pageSlot: number, page: ApplicationPage, previous
 		const label = new LabelBuilder().setLabel(question.label.slice(0, 45));
 		const isText = question.type === "short" || question.type === "paragraph";
 		const limit = isText ? TEXT_MAX_LENGTH : 0;
-		const lengthHint = isText
-			? `${question.minLength ? `Min ${question.minLength} • ` : ""}Max ${limit} characters`
-			: "";
-		const hint = [question.description ?? (question.options.length === 1 ? question.optionDescriptions?.[0] : undefined), lengthHint].filter(Boolean).join(" • ");
+		// Only the question's own hint is shown; min/max length are enforced by the input itself.
+		const hint = question.description ?? (question.options.length === 1 ? question.optionDescriptions?.[0] : undefined);
 		if (hint) label.setDescription(hint.slice(0, 100));
 
 		const customId = applicationQuestionFieldId(index);
