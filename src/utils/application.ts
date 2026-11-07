@@ -149,6 +149,8 @@ export type ApplicationRecord = {
 	status: ApplicationStatus;
 	/** Index into `pages` of the tab the review message currently shows. */
 	viewPage?: number;
+	/** The public thread under the review message where reviewers discuss the application. */
+	threadId?: string;
 	hasTranscript?: boolean;
 	reviewerId?: string;
 	decidedAt?: number;
@@ -1107,6 +1109,34 @@ export async function sendApplicationDecisionDm(record: ApplicationRecord) {
 /* ------------------------------------------------------------------ */
 /* Uploads                                                             */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Opens a public thread under the review message so reviewers can talk the
+ * application through. Returns its id, or null when it could not be created
+ * (e.g. the bot lacks Create Public Threads): the application is already
+ * posted, so this must never make a submission fail.
+ */
+export async function createReviewThread(channelId: string, messageId: string, record: ApplicationRecord) {
+	const name = `Application #${record.ref} • ${record.username ?? record.userId}`.slice(0, 100);
+
+	try {
+		const thread = await fetchDiscord(
+			`/channels/${channelId}/messages/${messageId}/threads`,
+			process.env.DISCORD_BOT_TOKEN!,
+			true,
+			"POST",
+			{ name, auto_archive_duration: 1440 },
+		);
+
+		return typeof thread?.id === "string" ? thread.id : null;
+	} catch (error) {
+		console.warn(
+			`[application] Could not open a discussion thread for #${record.ref} in ${channelId}. The bot needs Create Public Threads and Send Messages in Threads there:`,
+			error,
+		);
+		return null;
+	}
+}
 
 export type OutgoingFile = { filename: string; bytes: ArrayBuffer; contentType: string };
 

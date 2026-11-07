@@ -19,6 +19,7 @@ import {
 	buildPageModal,
 	buildReviewComponents,
 	createApplicationRef,
+	createReviewThread,
 	deleteApplicationDraft,
 	getActivePages,
 	getApplicationConfig,
@@ -225,6 +226,10 @@ const submitButton: InteractionComponent = {
 				}),
 			});
 		}
+
+		// Reviewers discuss the application in a public thread under the message.
+		const threadId = await createReviewThread(message.channel_id, message.id, record);
+		if (threadId) record.threadId = threadId;
 
 		// The message is already in the review channel, so a storage hiccup
 		// must not tell the applicant it failed (they would resend it).
