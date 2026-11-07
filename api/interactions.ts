@@ -48,7 +48,12 @@ export const mini = new MiniInteraction({
 	componentsDirectory: "src/components",
 	utilsDirectory: "src/utils",
 	timeoutConfig: {
-		initialResponseTimeout: 30000,
+		// The library auto-defers after min(2500, this) ms of handler time. Vercel
+		// needs ~1s to hand the request to the handler (more on a cold start) and
+		// Discord drops anything acknowledged later than 3s after it created the
+		// interaction, so a 2.5s defer lands too late and every follow-up edit
+		// then fails with 404 "Unknown Webhook".
+		initialResponseTimeout: 1500,
 		autoDeferSlowOperations: true,
 		enableTimeoutWarnings: true,
 		enableResponseDebugLogging: true,

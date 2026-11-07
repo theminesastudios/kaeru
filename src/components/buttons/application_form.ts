@@ -55,10 +55,16 @@ function createPageButton(pageSlot: number): InteractionComponent {
 
 			// The modal has to be the first response, so both reads run in
 			// parallel to stay inside the auto-defer window.
+			const startedAt = Date.now();
 			const [config, draft] = await Promise.all([
 				getApplicationConfig(guildId),
 				getApplicationDraft(guildId, user.id),
 			]);
+
+			// A modal must be the first response (Discord allows 3s), so slow reads
+			// here are what makes the button fail. Surface them in the logs.
+			const readMs = Date.now() - startedAt;
+			if (readMs > 800) console.warn(`[application] Page ${pageSlot} button reads took ${readMs}ms before showModal.`);
 
 			const button = draft ? config?.buttons[draft.slot - 1] : null;
 			const page = button?.pages[pageSlot - 1];
