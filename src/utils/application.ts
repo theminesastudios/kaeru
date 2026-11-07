@@ -865,6 +865,11 @@ export function buildAnswersTranscript(record: ApplicationRecord) {
 
 export const TRANSCRIPT_FILENAME = "application.txt";
 
+/** Maps the review message's uploaded files by name, for the link-only fallback. */
+export function reviewAttachmentLinks(attachments: { filename: string; url: string }[] | undefined) {
+	return new Map((attachments ?? []).map((attachment) => [attachment.filename, attachment.url] as const));
+}
+
 function describeStatus(record: ApplicationRecord) {
 	switch (record.status) {
 		case "pending":
@@ -882,7 +887,13 @@ function describeStatus(record: ApplicationRecord) {
  * (whose file URLs cannot be sent back as-is). Only the selected page's
  * answers are shown; the uploaded files stay on the message either way.
  */
-export function buildReviewComponents(record: ApplicationRecord) {
+export function buildReviewComponents(
+	record: ApplicationRecord,
+	options: {
+		/** filename -> URL. When set, files are listed as links instead of inline previews. */
+		attachmentLinks?: Map<string, string>;
+	} = {},
+) {
 	const viewPage = Math.min(Math.max(record.viewPage ?? 0, 0), Math.max(record.pages.length - 1, 0));
 	const page = record.pages[viewPage] ?? { title: "Answers", answers: [] };
 
@@ -944,32 +955,54 @@ export function buildReviewComponents(record: ApplicationRecord) {
 		push(new TextDisplayBuilder().setContent(`**${answer.label}**\n${quote(truncate(body, perAnswerBudget))}`));
 	}
 
-	const images = page.answers.filter((answer) => answer.attachment?.contentType?.startsWith("image/"));
-	const files = page.answers.filter(
-		(answer) => answer.attachment && !answer.attachment.contentType?.startsWith("image/"),
-	);
+	const links = options.attachmentLinks;
+	const showTranscript = record.hasTranscript && pageNeedsTranscript(page);
 
-	if (images.length > 0) {
-		push({
-			type: 12,
-			items: images.map((answer) => ({
-				media: { url: `attachment://${answer.attachment!.filename}` },
-				description: answer.label.slice(0, 1024),
-			})),
+	if (links) {
+		// Fallback: Discord refused the inline previews, so list plain links.
+		const lines = page.answers.flatMap((answer) => {
+			if (!answer.attachment) return [];
+			const { filename } = answer.attachment;
+			const url = links.get(filename);
+			return [`${answer.label}: ${url ? `[${filename}](${url})` : `\`${filename}\``}`];
 		});
-	}
 
-	for (const answer of files) {
-		push({ type: 13, file: { url: `attachment://${answer.attachment!.filename}` } });
-	}
+		if (showTranscript) {
+			const url = links.get(TRANSCRIPT_FILENAME);
+			lines.push(`Transcript: ${url ? `[${TRANSCRIPT_FILENAME}](${url})` : TRANSCRIPT_FILENAME}`);
+		}
 
-	if (record.hasTranscript && pageNeedsTranscript(page)) {
-		push(
-			new TextDisplayBuilder().setContent(
-				"-# Some answers were shortened. The full text is in the attached transcript.",
-			),
+		if (lines.length > 0) {
+			push(new TextDisplayBuilder().setContent(`-# ${lines.join("\n-# ")}`.slice(0, 1500)));
+		}
+	} else {
+		const images = page.answers.filter((answer) => answer.attachment?.contentType?.startsWith("image/"));
+		const files = page.answers.filter(
+			(answer) => answer.attachment && !answer.attachment.contentType?.startsWith("image/"),
 		);
-		push({ type: 13, file: { url: `attachment://${TRANSCRIPT_FILENAME}` } });
+
+		if (images.length > 0) {
+			push({
+				type: 12,
+				items: images.map((answer) => ({
+					media: { url: `attachment://${answer.attachment!.filename}` },
+					description: answer.label.slice(0, 1024),
+				})),
+			});
+		}
+
+		for (const answer of files) {
+			push({ type: 13, file: { url: `attachment://${answer.attachment!.filename}` } });
+		}
+
+		if (showTranscript) {
+			push(
+				new TextDisplayBuilder().setContent(
+					"-# Some answers were shortened. The full text is in the attached transcript.",
+				),
+			);
+			push({ type: 13, file: { url: `attachment://${TRANSCRIPT_FILENAME}` } });
+		}
 	}
 
 	push(separator());

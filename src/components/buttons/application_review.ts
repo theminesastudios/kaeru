@@ -29,6 +29,7 @@ import {
 	getApplicationConfig,
 	getApplicationHistory,
 	getApplicationRecord,
+	reviewAttachmentLinks,
 	saveApplicationRecord,
 } from "../../utils/application.ts";
 
@@ -103,16 +104,37 @@ function createTabButton(page: number): InteractionComponent {
 				});
 			}
 
+			// Acknowledge first and edit afterwards: a callback response gives no
+			// feedback when Discord rejects it ("did not respond in time"), while
+			// an edit throws the real reason, which lets the fallback below run.
+			buttonInteraction.deferUpdate();
+
 			record.viewPage = page - 1;
 			await saveApplicationRecord(message.id, record);
 
-			return buttonInteraction.update({
-				components: buildReviewComponents(record),
-				// Listing the existing ids keeps the uploaded files on the
-				// message, so every tab can keep pointing at them.
-				attachments: (message.attachments ?? []).map((attachment) => ({ id: attachment.id })),
+			// Listing the existing ids keeps the uploaded files on the message,
+			// so every tab can keep pointing at them.
+			const attachments = (message.attachments ?? []).map((attachment) => ({ id: attachment.id }));
+
+			try {
+				return await buttonInteraction.editReply({
+					components: buildReviewComponents(record),
+					attachments,
+					allowed_mentions: { parse: [] },
+				} as Parameters<ReviewInteraction["editReply"]>[0]);
+			} catch (error) {
+				console.error(`[application] Failed to show review tab ${page} with inline files:`, error);
+			}
+
+			// Discord refused the inline previews: show the same page with the
+			// uploaded files as plain links so the tab still works.
+			return buttonInteraction.editReply({
+				components: buildReviewComponents(record, {
+					attachmentLinks: reviewAttachmentLinks(message.attachments),
+				}),
+				attachments,
 				allowed_mentions: { parse: [] },
-			} as Parameters<ReviewInteraction["update"]>[0]);
+			} as Parameters<ReviewInteraction["editReply"]>[0]);
 		},
 	};
 }

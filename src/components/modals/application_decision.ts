@@ -13,6 +13,7 @@ import {
 	clearPendingApplication,
 	getApplicationConfig,
 	getApplicationRecord,
+	reviewAttachmentLinks,
 	saveApplicationRecord,
 	sendApplicationDecisionDm,
 } from "../../utils/application.ts";
@@ -85,22 +86,32 @@ function createDecisionModal(decision: "approved" | "declined"): InteractionModa
 				clearPendingApplication(record.guildId, record.userId, record.slot),
 			]);
 
-			try {
-				await fetchDiscord(
+			// Listing the existing ids keeps the uploaded files, so the redrawn
+			// components can keep pointing at them.
+			const attachments = (message.attachments ?? []).map((attachment) => ({ id: attachment.id }));
+			const editReviewMessage = (components: ReturnType<typeof buildReviewComponents>) =>
+				fetchDiscord(
 					`/channels/${message.channel_id}/messages/${message.id}`,
 					process.env.DISCORD_BOT_TOKEN!,
 					true,
 					"PATCH",
-					{
-						components: buildReviewComponents(record),
-						// Listing the existing ids keeps the uploaded files, so the
-						// redrawn components can keep pointing at them.
-						attachments: (message.attachments ?? []).map((attachment) => ({ id: attachment.id })),
-						allowed_mentions: { parse: [] },
-					},
+					{ components, attachments, allowed_mentions: { parse: [] } },
 				);
+
+			try {
+				await editReviewMessage(buildReviewComponents(record));
 			} catch (error) {
-				console.error("[application] Failed to update review message:", error);
+				console.error("[application] Failed to update review message with inline files:", error);
+
+				// Retry with the uploaded files as plain links so the decision
+				// still shows up on the message.
+				try {
+					await editReviewMessage(
+						buildReviewComponents(record, { attachmentLinks: reviewAttachmentLinks(message.attachments) }),
+					);
+				} catch (fallbackError) {
+					console.error("[application] Failed to update review message:", fallbackError);
+				}
 			}
 
 			const verb = decision === "approved" ? "approved" : "rejected";
