@@ -440,9 +440,9 @@ const applicationCommand: InteractionCommand = {
 				});
 			}
 
-			if (type === "checkbox" && (options.length === 1 || options.length > 10)) {
+			if (type === "checkbox" && options.length > 10) {
 				return interaction.editReply({
-					content: `${getEmoji("error")} Checkbox questions need between **2 and 10** options. Leave options empty for a single confirmation box.`,
+					content: `${getEmoji("error")} Checkbox questions take up to **10** options. Use one option (or none) for a single confirmation box.`,
 				});
 			}
 

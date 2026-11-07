@@ -672,7 +672,7 @@ export function buildPageModal(pageSlot: number, page: ApplicationPage, previous
 		const lengthHint = isText
 			? `${question.minLength ? `Min ${question.minLength} • ` : ""}Max ${limit} characters`
 			: "";
-		const hint = [question.description, lengthHint].filter(Boolean).join(" • ");
+		const hint = [question.description ?? (question.options.length === 1 ? question.optionDescriptions?.[0] : undefined), lengthHint].filter(Boolean).join(" • ");
 		if (hint) label.setDescription(hint.slice(0, 100));
 
 		const customId = applicationQuestionFieldId(index);
@@ -727,8 +727,10 @@ export function buildPageModal(pageSlot: number, page: ApplicationPage, previous
 				// Without options the question is a single confirmation box
 				// ("I have read the rules"). Discord has no `required` flag on a
 				// lone checkbox, so the page handler enforces it instead.
-				if (question.options.length === 0) {
-					label.setComponent(new CheckboxBuilder().setCustomId(customId).setDefault(before === "Yes"));
+				if (question.options.length <= 1) {
+					label.setComponent(
+						new CheckboxBuilder().setCustomId(customId).setDefault(before === (question.options[0] ?? "Yes")),
+					);
 					break;
 				}
 
