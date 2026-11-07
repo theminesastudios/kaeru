@@ -113,10 +113,11 @@ export type ApplicationConfig = {
 export type ApplicationAnswer = {
 	label: string;
 	answer: string;
-	/** A file copied into the review message. */
+	/** A file kept with the application; the review message re-uploads it when shown. */
 	attachment?: {
 		filename: string;
 		contentType: string | null;
+		size?: number;
 	};
 	/** A modal upload still waiting to be copied when the form is submitted. */
 	upload?: {
@@ -865,9 +866,16 @@ export function buildAnswersTranscript(record: ApplicationRecord) {
 
 export const TRANSCRIPT_FILENAME = "application.txt";
 
-/** Maps the review message's uploaded files by name, for the link-only fallback. */
-export function reviewAttachmentLinks(attachments: { filename: string; url: string }[] | undefined) {
-	return new Map((attachments ?? []).map((attachment) => [attachment.filename, attachment.url] as const));
+const MEDIA_GALLERY_MAX_ITEMS = 10;
+const GALLERY_EXTENSIONS = /\.(png|jpe?g|gif|webp|avif|bmp|mp4|mov|webm)$/i;
+
+/** Whether a file can be shown inline in a media gallery (images and videos). */
+function isGalleryMedia(attachment: { filename: string; contentType: string | null }) {
+	const type = attachment.contentType?.toLowerCase() ?? "";
+	if (type === "image/svg+xml") return false;
+	if (type.startsWith("image/") || type.startsWith("video/")) return true;
+	// Uploads sometimes arrive without a useful content type.
+	return (type === "" || type === "application/octet-stream") && GALLERY_EXTENSIONS.test(attachment.filename);
 }
 
 function describeStatus(record: ApplicationRecord) {
@@ -881,21 +889,28 @@ function describeStatus(record: ApplicationRecord) {
 	}
 }
 
+function reviewPageOf(record: ApplicationRecord) {
+	const viewPage = Math.min(Math.max(record.viewPage ?? 0, 0), Math.max(record.pages.length - 1, 0));
+	return { viewPage, page: record.pages[viewPage] ?? { title: "Answers", answers: [] } };
+}
+
 /**
  * Builds the review message from the stored record so a tab switch or a
  * decision can redraw it without echoing Discord's resolved component payload
  * (whose file URLs cannot be sent back as-is). Only the selected page's
- * answers are shown; the uploaded files stay on the message either way.
+ * answers and files are shown. The message does not keep files from tab to
+ * tab, so every redraw uploads the page's files again (loadReviewFiles).
  */
 export function buildReviewComponents(
 	record: ApplicationRecord,
 	options: {
-		/** filename -> URL. When set, files are listed as links instead of inline previews. */
-		attachmentLinks?: Map<string, string>;
+		/** Files of the shown page that could not be loaded; they are mentioned instead of embedded. */
+		unavailable?: Set<string>;
+		/** Show every file as a file card, for when Discord refuses the media gallery. */
+		filesOnly?: boolean;
 	} = {},
 ) {
-	const viewPage = Math.min(Math.max(record.viewPage ?? 0, 0), Math.max(record.pages.length - 1, 0));
-	const page = record.pages[viewPage] ?? { title: "Answers", answers: [] };
+	const { viewPage, page } = reviewPageOf(record);
 
 	const container = new ContainerBuilder()
 		.addComponent(
@@ -955,54 +970,47 @@ export function buildReviewComponents(
 		push(new TextDisplayBuilder().setContent(`**${answer.label}**\n${quote(truncate(body, perAnswerBudget))}`));
 	}
 
-	const links = options.attachmentLinks;
-	const showTranscript = record.hasTranscript && pageNeedsTranscript(page);
+	// Files are uploaded again with every redraw (see loadReviewFiles), so each
+	// one can be referenced by name. Images and videos go into a media gallery;
+	// everything else (audio, pdf, markdown, archives, ...) becomes a file card.
+	const unavailable = options.unavailable ?? new Set<string>();
+	const attached = page.answers.filter((answer) => answer.attachment);
+	const present = attached.filter((answer) => !unavailable.has(answer.attachment!.filename));
+	const missing = attached.filter((answer) => unavailable.has(answer.attachment!.filename));
 
-	if (links) {
-		// Fallback: Discord refused the inline previews, so list plain links.
-		const lines = page.answers.flatMap((answer) => {
-			if (!answer.attachment) return [];
-			const { filename } = answer.attachment;
-			const url = links.get(filename);
-			return [`${answer.label}: ${url ? `[${filename}](${url})` : `\`${filename}\``}`];
+	const galleryAnswers = options.filesOnly
+		? []
+		: present.filter((answer) => isGalleryMedia(answer.attachment!)).slice(0, MEDIA_GALLERY_MAX_ITEMS);
+	const fileAnswers = present.filter((answer) => !galleryAnswers.includes(answer));
+
+	if (galleryAnswers.length > 0) {
+		push({
+			type: 12,
+			items: galleryAnswers.map((answer) => ({
+				media: { url: `attachment://${answer.attachment!.filename}` },
+				description: answer.label.slice(0, 1024),
+			})),
 		});
+	}
 
-		if (showTranscript) {
-			const url = links.get(TRANSCRIPT_FILENAME);
-			lines.push(`Transcript: ${url ? `[${TRANSCRIPT_FILENAME}](${url})` : TRANSCRIPT_FILENAME}`);
-		}
+	for (const answer of fileAnswers) {
+		push({ type: 13, file: { url: `attachment://${answer.attachment!.filename}` } });
+	}
 
-		if (lines.length > 0) {
-			push(new TextDisplayBuilder().setContent(`-# ${lines.join("\n-# ")}`.slice(0, 1500)));
-		}
-	} else {
-		const images = page.answers.filter((answer) => answer.attachment?.contentType?.startsWith("image/"));
-		const files = page.answers.filter(
-			(answer) => answer.attachment && !answer.attachment.contentType?.startsWith("image/"),
+	if (missing.length > 0) {
+		const lines = missing.map(
+			(answer) => `${answer.label}: \`${answer.attachment!.filename}\` is no longer available.`,
 		);
+		push(new TextDisplayBuilder().setContent(`-# ${lines.join("\n-# ")}`.slice(0, 1500)));
+	}
 
-		if (images.length > 0) {
-			push({
-				type: 12,
-				items: images.map((answer) => ({
-					media: { url: `attachment://${answer.attachment!.filename}` },
-					description: answer.label.slice(0, 1024),
-				})),
-			});
-		}
-
-		for (const answer of files) {
-			push({ type: 13, file: { url: `attachment://${answer.attachment!.filename}` } });
-		}
-
-		if (showTranscript) {
-			push(
-				new TextDisplayBuilder().setContent(
-					"-# Some answers were shortened. The full text is in the attached transcript.",
-				),
-			);
-			push({ type: 13, file: { url: `attachment://${TRANSCRIPT_FILENAME}` } });
-		}
+	if (record.hasTranscript && pageNeedsTranscript(page)) {
+		push(
+			new TextDisplayBuilder().setContent(
+				"-# Some answers were shortened. The full text is in the attached transcript.",
+			),
+		);
+		push({ type: 13, file: { url: `attachment://${TRANSCRIPT_FILENAME}` } });
 	}
 
 	push(separator());
@@ -1100,40 +1108,106 @@ export async function sendApplicationDecisionDm(record: ApplicationRecord) {
 /* Uploads                                                             */
 /* ------------------------------------------------------------------ */
 
-type OutgoingFile = { filename: string; bytes: ArrayBuffer; contentType: string };
+export type OutgoingFile = { filename: string; bytes: ArrayBuffer; contentType: string };
+
+// Mongo documents top out at 16 MB and files are stored as base64 (+33%), so
+// anything larger than this stays a plain link to the applicant's upload.
+export const MAX_STORED_FILE_BYTES = 8 * 1024 * 1024;
+
+function fileKey(ref: string, filename: string) {
+	return `application-file:${ref}:${filename}`;
+}
+
+/** Keeps an uploaded file with its application so review redraws can attach it again. */
+export async function saveApplicationFile(ref: string, file: OutgoingFile) {
+	await db.set(fileKey(ref, file.filename), {
+		contentType: file.contentType,
+		data: Buffer.from(file.bytes).toString("base64"),
+	});
+}
+
+export async function getApplicationFile(ref: string, filename: string): Promise<OutgoingFile | null> {
+	const raw = await db.get(fileKey(ref, filename)).catch(() => null);
+	if (!raw || typeof raw !== "object" || typeof raw.data !== "string") return null;
+
+	const bytes = Buffer.from(raw.data, "base64");
+	return {
+		filename,
+		bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+		contentType: typeof raw.contentType === "string" ? raw.contentType : "application/octet-stream",
+	};
+}
+
+/**
+ * The files the review message needs for the page it currently shows: that
+ * page's uploads plus the text transcript when answers were shortened. Files
+ * that can no longer be loaded (older applications, oversized uploads) are
+ * reported in `unavailable` so the page can say so instead of failing.
+ */
+export async function loadReviewFiles(record: ApplicationRecord, cache: Map<string, OutgoingFile> = new Map()) {
+	const { page } = reviewPageOf(record);
+	const attachments = page.answers.flatMap((answer) => (answer.attachment ? [answer.attachment] : []));
+
+	const loaded = await Promise.all(
+		attachments.map(async (attachment) => ({
+			filename: attachment.filename,
+			file: cache.get(attachment.filename) ?? (await getApplicationFile(record.ref, attachment.filename)),
+		})),
+	);
+
+	const files: OutgoingFile[] = [];
+	const unavailable = new Set<string>();
+	for (const { filename, file } of loaded) {
+		if (file) files.push(file);
+		else unavailable.add(filename);
+	}
+
+	if (record.hasTranscript && pageNeedsTranscript(page)) {
+		files.push({
+			filename: TRANSCRIPT_FILENAME,
+			bytes: new TextEncoder().encode(buildAnswersTranscript(record)).buffer as ArrayBuffer,
+			contentType: "text/plain; charset=utf-8",
+		});
+	}
+
+	return { files, unavailable };
+}
 
 /**
  * Posts (or edits) a message with optional uploaded files. `fetchDiscord`
  * only speaks JSON, so multipart uploads go through fetch directly.
+ *
+ * `attachments` is always sent: on an edit it replaces the message's files
+ * with exactly these, which is what drops the previous tab's uploads.
+ * Interaction webhooks authorise with their token, so they skip the bot header.
  */
 export async function sendDiscordMessageWithFiles(
 	method: "POST" | "PATCH",
 	endpoint: string,
 	payload: Record<string, unknown>,
 	files: OutgoingFile[],
+	options: { auth?: boolean } = {},
 ) {
 	const url = `https://discord.com/api/v10${endpoint}`;
-	const headers: Record<string, string> = {
-		Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+	const headers: Record<string, string> = {};
+	if (options.auth !== false) headers.Authorization = `Bot ${process.env.DISCORD_BOT_TOKEN}`;
+
+	const fullPayload = {
+		...payload,
+		attachments: files.map((file, index) => ({ id: index, filename: file.filename })),
 	};
 
 	let body: BodyInit;
 	if (files.length > 0) {
 		const formData = new FormData();
-		formData.append(
-			"payload_json",
-			JSON.stringify({
-				...payload,
-				attachments: files.map((file, index) => ({ id: index, filename: file.filename })),
-			}),
-		);
+		formData.append("payload_json", JSON.stringify(fullPayload));
 		files.forEach((file, index) => {
 			formData.append(`files[${index}]`, new Blob([file.bytes], { type: file.contentType }), file.filename);
 		});
 		body = formData;
 	} else {
 		headers["Content-Type"] = "application/json";
-		body = JSON.stringify(payload);
+		body = JSON.stringify(fullPayload);
 	}
 
 	const response = await fetch(url, { method, headers, body });
@@ -1142,6 +1216,22 @@ export async function sendDiscordMessageWithFiles(
 	}
 
 	return (await response.json()) as { id: string; channel_id: string };
+}
+
+/** Redraws the message an interaction's component sits on, with its files. */
+export function editInteractionMessage(
+	applicationId: string,
+	interactionToken: string,
+	payload: Record<string, unknown>,
+	files: OutgoingFile[],
+) {
+	return sendDiscordMessageWithFiles(
+		"PATCH",
+		`/webhooks/${applicationId}/${interactionToken}/messages/@original`,
+		payload,
+		files,
+		{ auth: false },
+	);
 }
 
 export function sanitizeFilename(name: string, fallback: string) {

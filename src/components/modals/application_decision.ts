@@ -1,6 +1,5 @@
 import { InteractionFlags } from "@minesa-org/mini-interaction";
 import type { InteractionModal } from "@minesa-org/mini-interaction";
-import { fetchDiscord } from "../../utils/discord.ts";
 import { getEmoji } from "../../utils/index.ts";
 import { getInteractionUser } from "../../utils/ticketControls.ts";
 import {
@@ -13,9 +12,10 @@ import {
 	clearPendingApplication,
 	getApplicationConfig,
 	getApplicationRecord,
-	reviewAttachmentLinks,
+	loadReviewFiles,
 	saveApplicationRecord,
 	sendApplicationDecisionDm,
+	sendDiscordMessageWithFiles,
 } from "../../utils/application.ts";
 
 function createDecisionModal(decision: "approved" | "declined"): InteractionModal {
@@ -86,29 +86,26 @@ function createDecisionModal(decision: "approved" | "declined"): InteractionModa
 				clearPendingApplication(record.guildId, record.userId, record.slot),
 			]);
 
-			// Listing the existing ids keeps the uploaded files, so the redrawn
-			// components can keep pointing at them.
-			const attachments = (message.attachments ?? []).map((attachment) => ({ id: attachment.id }));
-			const editReviewMessage = (components: ReturnType<typeof buildReviewComponents>) =>
-				fetchDiscord(
-					`/channels/${message.channel_id}/messages/${message.id}`,
-					process.env.DISCORD_BOT_TOKEN!,
-					true,
+			// The message does not keep files a redraw does not reference, so the
+			// shown page's files are attached again from the stored copies.
+			const { files, unavailable } = await loadReviewFiles(record);
+			const editReviewMessage = (options: Parameters<typeof buildReviewComponents>[1]) =>
+				sendDiscordMessageWithFiles(
 					"PATCH",
-					{ components, attachments, allowed_mentions: { parse: [] } },
+					`/channels/${message.channel_id}/messages/${message.id}`,
+					{ components: buildReviewComponents(record, options), allowed_mentions: { parse: [] } },
+					files,
 				);
 
 			try {
-				await editReviewMessage(buildReviewComponents(record));
+				await editReviewMessage({ unavailable });
 			} catch (error) {
-				console.error("[application] Failed to update review message with inline files:", error);
+				console.error("[application] Failed to update review message with media previews:", error);
 
-				// Retry with the uploaded files as plain links so the decision
-				// still shows up on the message.
+				// Retry with every file as a file card so the decision still
+				// shows up on the message.
 				try {
-					await editReviewMessage(
-						buildReviewComponents(record, { attachmentLinks: reviewAttachmentLinks(message.attachments) }),
-					);
+					await editReviewMessage({ unavailable, filesOnly: true });
 				} catch (fallbackError) {
 					console.error("[application] Failed to update review message:", fallbackError);
 				}

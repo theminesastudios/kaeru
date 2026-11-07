@@ -27,10 +27,11 @@ import {
 	applicationReviewTabId,
 	buildReviewComponents,
 	canReviewApplications,
+	editInteractionMessage,
 	getApplicationConfig,
 	getApplicationHistory,
 	getApplicationRecord,
-	reviewAttachmentLinks,
+	loadReviewFiles,
 	saveApplicationRecord,
 } from "../../utils/application.ts";
 
@@ -128,33 +129,30 @@ function createTabButton(page: number): InteractionComponent {
 			record.viewPage = page - 1;
 			await saveApplicationRecord(message.id, record);
 
-			// Listing the existing ids keeps the uploaded files on the message,
-			// so every tab can keep pointing at them.
-			const attachments = (message.attachments ?? []).map((attachment) => ({ id: attachment.id }));
+			// The message does not keep files between tabs (Discord drops the ones
+			// a redraw does not reference), so the shown page's files are attached
+			// again from the copies kept with the application.
+			const { files, unavailable } = await loadReviewFiles(record);
+			const redraw = (options: Parameters<typeof buildReviewComponents>[1]) =>
+				editInteractionMessage(
+					buttonInteraction.application_id,
+					buttonInteraction.token,
+					{ components: buildReviewComponents(record, options), allowed_mentions: { parse: [] } },
+					files,
+				);
 
 			try {
-				const response = await buttonInteraction.editReply({
-					components: buildReviewComponents(record),
-					attachments,
-					allowed_mentions: { parse: [] },
-				} as Parameters<ReviewInteraction["editReply"]>[0]);
+				await redraw({ unavailable });
 				console.log(`[application] Review tab ${page}: shown in ${Date.now() - startedAt}ms.`);
-				return response;
+				return;
 			} catch (error) {
-				console.error(`[application] Failed to show review tab ${page} with inline files:`, error);
+				console.error(`[application] Failed to show review tab ${page} with media previews:`, error);
 			}
 
-			// Discord refused the inline previews: show the same page with the
-			// uploaded files as plain links so the tab still works.
-			const response = await buttonInteraction.editReply({
-				components: buildReviewComponents(record, {
-					attachmentLinks: reviewAttachmentLinks(message.attachments),
-				}),
-				attachments,
-				allowed_mentions: { parse: [] },
-			} as Parameters<ReviewInteraction["editReply"]>[0]);
-			console.log(`[application] Review tab ${page}: shown with file links in ${Date.now() - startedAt}ms.`);
-			return response;
+			// Discord refused a media gallery (e.g. an unsupported image or video
+			// format): show every file as a file card instead.
+			await redraw({ unavailable, filesOnly: true });
+			console.log(`[application] Review tab ${page}: shown with file cards in ${Date.now() - startedAt}ms.`);
 		},
 	};
 }

@@ -11,10 +11,9 @@ import {
 	APPLICATION_FORM_CANCEL_BUTTON_ID,
 	APPLICATION_FORM_SUBMIT_BUTTON_ID,
 	APPLICATION_PAGES,
-	TRANSCRIPT_FILENAME,
+	MAX_STORED_FILE_BYTES,
 	addApplicationHistory,
 	applicationPageButtonId,
-	buildAnswersTranscript,
 	buildApplicationForm,
 	buildFormNotice,
 	buildPageModal,
@@ -26,8 +25,10 @@ import {
 	getApplicationDraft,
 	hasPendingApplication,
 	isDraftComplete,
+	loadReviewFiles,
 	markPendingApplication,
 	reviewAnswersNeedTranscript,
+	saveApplicationFile,
 	saveApplicationRecord,
 	sendDiscordMessageWithFiles,
 	userAvatarUrl,
@@ -35,9 +36,6 @@ import {
 import type { ApplicationAnswer, ApplicationRecord, ApplicationRecordPage } from "../../utils/application.ts";
 
 type FormInteraction = ButtonInteraction & MessageComponentInteraction;
-
-// Bots can always upload up to 10 MiB; anything larger stays a link.
-const MAX_REUPLOAD_BYTES = 10 * 1024 * 1024;
 
 type UploadFile = { filename: string; bytes: ArrayBuffer; contentType: string };
 
@@ -78,9 +76,14 @@ function createPageButton(pageSlot: number): InteractionComponent {
 	};
 }
 
-/** Copies modal uploads into files for the review message while their URLs still work. */
-async function collectUploads(pages: ApplicationRecordPage[]) {
-	const files: UploadFile[] = [];
+/**
+ * Copies modal uploads while their URLs still work and keeps them with the
+ * application. The review message does not hold on to files between tabs, so
+ * it attaches the shown page's files again on every redraw. Returns the
+ * copied files so the first post does not have to read them back.
+ */
+async function collectUploads(ref: string, pages: ApplicationRecordPage[]) {
+	const copied = new Map<string, UploadFile>();
 
 	for (const page of pages) {
 		for (const answer of page.answers) {
@@ -88,17 +91,22 @@ async function collectUploads(pages: ApplicationRecordPage[]) {
 			delete answer.upload;
 			if (!upload) continue;
 
-			if (upload.size <= MAX_REUPLOAD_BYTES) {
+			if (upload.size <= MAX_STORED_FILE_BYTES) {
 				try {
 					const response = await fetch(upload.url);
 					if (response.ok) {
-						files.push({
+						const file: UploadFile = {
 							filename: upload.filename,
 							bytes: await response.arrayBuffer(),
 							contentType:
 								upload.contentType ?? response.headers.get("content-type") ?? "application/octet-stream",
-						});
-						answer.attachment = { filename: upload.filename, contentType: upload.contentType };
+						};
+						copied.set(file.filename, file);
+						answer.attachment = {
+							filename: file.filename,
+							contentType: file.contentType,
+							size: file.bytes.byteLength,
+						};
 						continue;
 					}
 				} catch (error) {
@@ -111,7 +119,12 @@ async function collectUploads(pages: ApplicationRecordPage[]) {
 		}
 	}
 
-	return files;
+	const stored = await Promise.allSettled([...copied.values()].map((file) => saveApplicationFile(ref, file)));
+	for (const result of stored) {
+		if (result.status === "rejected") console.warn("[application] Failed to store attachment:", result.reason);
+	}
+
+	return copied;
 }
 
 const submitButton: InteractionComponent = {
@@ -161,13 +174,14 @@ const submitButton: InteractionComponent = {
 			answers: (draft.pages[pageSlot - 1] ?? []).map((answer: ApplicationAnswer) => ({ ...answer })),
 		}));
 
-		const [files, guild] = await Promise.all([
-			collectUploads(pages),
+		const ref = createApplicationRef();
+		const [copiedFiles, guild] = await Promise.all([
+			collectUploads(ref, pages),
 			fetchDiscord(`/guilds/${guildId}`, process.env.DISCORD_BOT_TOKEN!, true).catch(() => null),
 		]);
 
 		const record: ApplicationRecord = {
-			ref: createApplicationRef(),
+			ref,
 			guildId,
 			guildName: typeof guild?.name === "string" ? guild.name : null,
 			userId: user.id,
@@ -184,13 +198,9 @@ const submitButton: InteractionComponent = {
 			hasTranscript: reviewAnswersNeedTranscript(pages),
 		};
 
-		if (record.hasTranscript) {
-			files.push({
-				filename: TRANSCRIPT_FILENAME,
-				bytes: new TextEncoder().encode(buildAnswersTranscript(record)).buffer as ArrayBuffer,
-				contentType: "text/plain; charset=utf-8",
-			});
-		}
+		// Only the page the review message opens on is attached; the other
+		// pages' files are attached when a reviewer switches to them.
+		const { files, unavailable } = await loadReviewFiles(record, copiedFiles);
 
 		let message: { id: string; channel_id: string };
 		try {
@@ -198,7 +208,7 @@ const submitButton: InteractionComponent = {
 				"POST",
 				`/channels/${config.reviewChannelId}/messages`,
 				{
-					components: buildReviewComponents(record),
+					components: buildReviewComponents(record, { unavailable }),
 					flags: MessageFlags.IsComponentsV2,
 					allowed_mentions: { parse: [] },
 				},
