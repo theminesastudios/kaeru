@@ -170,7 +170,7 @@ const applicationCommand: InteractionCommand = {
 				.addStringOption((opt) =>
 					opt
 						.setName("type")
-						.setDescription("short = one line, paragraph = long text, select = dropdown, checkbox = pick any, radio = pick one, attachment = file")
+						.setDescription("Answer format: short, paragraph, select, checkbox, radio or attachment")
 						.setRequired(true)
 						.addChoices(...QUESTION_TYPES),
 				)
