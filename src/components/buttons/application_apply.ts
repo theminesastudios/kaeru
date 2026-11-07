@@ -11,6 +11,7 @@ import {
 	APPLICATION_SLOTS,
 	applicationApplyButtonId,
 	buildApplicationForm,
+	buildFormNotice,
 	createApplicationDraft,
 	getActivePages,
 	getApplicationConfig,
@@ -31,6 +32,13 @@ function createApplyButton(slot: number): InteractionComponent {
 
 			if (!guildId || !user) return;
 
+			// This button sits on the public panel, so it must be acknowledged as a
+			// private reply before anything slow runs. If the library's timed
+			// auto-defer fires first it defers as a message *update*, and the
+			// answer below then overwrites the panel message itself for everyone.
+			// The components flag has to be set here; it cannot be added on the edit.
+			buttonInteraction.deferReply({ flags: [InteractionFlags.Ephemeral, InteractionFlags.IsComponentsV2] });
+
 			const [config, authorized, pending, existingDraft] = await Promise.all([
 				getApplicationConfig(guildId),
 				isUserAuthorized(user.id),
@@ -41,23 +49,22 @@ function createApplyButton(slot: number): InteractionComponent {
 			const button = config?.buttons[slot - 1];
 
 			if (!config?.reviewChannelId || !button || getActivePages(button).length === 0) {
-				return buttonInteraction.reply({
-					content: `${getEmoji("error")} This application is no longer available.`,
-					flags: InteractionFlags.Ephemeral,
+				return buttonInteraction.editReply({
+					components: buildFormNotice(`${getEmoji("error")} This application is no longer available.`),
 				});
 			}
 
 			if (!authorized) {
-				return buttonInteraction.reply({
+				return buttonInteraction.editReply({
 					components: [buildAuthorizationContainer(false).toJSON()],
-					flags: [InteractionFlags.Ephemeral, InteractionFlags.IsComponentsV2],
 				});
 			}
 
 			if (pending) {
-				return buttonInteraction.reply({
-					content: `${getEmoji("timer")} Your **${button.label}** application is still being reviewed. You will get a DM once staff decide.`,
-					flags: InteractionFlags.Ephemeral,
+				return buttonInteraction.editReply({
+					components: buildFormNotice(
+						`${getEmoji("timer")} Your **${button.label}** application is still being reviewed. You will get a DM once staff decide.`,
+					),
 				});
 			}
 
@@ -66,9 +73,8 @@ function createApplyButton(slot: number): InteractionComponent {
 			const draft = existingDraft?.slot === slot ? existingDraft : createApplicationDraft(slot);
 			await saveApplicationDraft(guildId, user.id, draft);
 
-			return buttonInteraction.reply({
+			return buttonInteraction.editReply({
 				components: buildApplicationForm(button, draft),
-				flags: [InteractionFlags.Ephemeral, InteractionFlags.IsComponentsV2],
 			});
 		},
 	};

@@ -48,13 +48,13 @@ export const mini = new MiniInteraction({
 	componentsDirectory: "src/components",
 	utilsDirectory: "src/utils",
 	timeoutConfig: {
-		// The library auto-defers after min(2500, this) ms of handler time. Vercel
-		// needs ~1s to hand the request to the handler (more on a cold start) and
-		// Discord drops anything acknowledged later than 3s after it created the
-		// interaction, so a 2.5s defer lands too late and every follow-up edit
-		// then fails with 404 "Unknown Webhook".
-		initialResponseTimeout: 1500,
-		autoDeferSlowOperations: true,
+		initialResponseTimeout: 30000,
+		// Handlers that need more than 3s defer explicitly. The library's timed
+		// auto-defer is unsafe for buttons: it defers a component as a message
+		// *update*, so a handler that then replies ends up overwriting the message
+		// the button sits on (this replaced the public application panel). A slow
+		// handler without a defer now fails privately instead.
+		autoDeferSlowOperations: false,
 		enableTimeoutWarnings: true,
 		enableResponseDebugLogging: true,
 	},
