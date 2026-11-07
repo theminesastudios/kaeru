@@ -6,6 +6,7 @@ import {
 	CheckboxGroupBuilder,
 	ContainerBuilder,
 	FileUploadBuilder,
+	ModalStringSelectMenuBuilder,
 	LabelBuilder,
 	MessageFlags,
 	ModalBuilder,
@@ -71,7 +72,7 @@ function oneToN(count: number) {
 export const APPLICATION_SLOTS = oneToN(APPLICATION_MAX_BUTTONS);
 export const APPLICATION_PAGES = oneToN(APPLICATION_MAX_PAGES);
 
-export type ApplicationQuestionType = "paragraph" | "checkbox" | "radio" | "attachment";
+export type ApplicationQuestionType = "short" | "paragraph" | "checkbox" | "radio" | "select" | "attachment";
 
 export type ApplicationQuestion = {
 	type: ApplicationQuestionType;
@@ -80,6 +81,8 @@ export type ApplicationQuestion = {
 	options: string[];
 	optionDescriptions?: string[];
 	required: boolean;
+	minLength?: number;
+	maxLength?: number;
 };
 
 export type ApplicationPage = {
@@ -170,6 +173,14 @@ export type ApplicationHistoryEntry = {
 };
 
 export const PARAGRAPH_MAX_LENGTH = 1000;
+export const SHORT_MAX_LENGTH = 100;
+export const TEXT_LIMIT = 4000;
+export const MAX_CHOICE_OPTIONS = 10;
+export const MAX_SELECT_OPTIONS = 25;
+
+export function textMaxLength(question: ApplicationQuestion) {
+	return question.maxLength ?? (question.type === "short" ? SHORT_MAX_LENGTH : PARAGRAPH_MAX_LENGTH);
+}
 // Components V2 messages share one 4000 character budget across every text
 // display. The review header, footer and decision take part of it, so a page's
 // answers get this much and longer ones move into an attached transcript.
@@ -448,22 +459,38 @@ export function getPublishableButtons(config: ApplicationConfig) {
 }
 
 /**
- * Splits the admin's option list. A pipe wins when present so labels can keep
- * their commas; otherwise commas separate the options. `Label > Description`
- * gives an option a description.
+ * Reads the admin's option list. A JSON object maps each title to its
+ * description, e.g. {"Yes": "I agree", "No": "Not yet"}. Plain `A, B` / `A | B`
+ * lists (with an optional `A > description`) are still understood.
  */
 export function parseQuestionOptions(raw: string | null | undefined) {
 	const options: string[] = [];
 	const descriptions: string[] = [];
 	if (!raw) return { options, descriptions };
 
+	const add = (title: unknown, description: unknown) => {
+		const option = String(title ?? "").trim().slice(0, 100);
+		if (!option) return;
+		options.push(option);
+		descriptions.push(typeof description === "string" ? description.trim().slice(0, 100) : "");
+	};
+
+	if (raw.trim().startsWith("{")) {
+		try {
+			const parsed = JSON.parse(raw);
+			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+				for (const [title, description] of Object.entries(parsed)) add(title, description);
+				return { options, descriptions };
+			}
+		} catch {
+			// Fall through to the plain list.
+		}
+	}
+
 	const separator = raw.includes("|") ? "|" : ",";
 	for (const part of raw.split(separator)) {
 		const [label = "", ...rest] = part.split(">");
-		const option = label.trim().slice(0, 100);
-		if (!option) continue;
-		options.push(option);
-		descriptions.push(rest.join(">").trim().slice(0, 100));
+		add(label, rest.join(">"));
 	}
 	return { options, descriptions };
 }
@@ -475,12 +502,16 @@ function optionDescription(question: ApplicationQuestion, index: number) {
 
 export function describeQuestionType(type: ApplicationQuestionType) {
 	switch (type) {
+		case "short":
+			return "Short";
 		case "paragraph":
 			return "Paragraph";
 		case "checkbox":
 			return "Checkbox";
 		case "radio":
 			return "Radio";
+		case "select":
+			return "Select";
 		case "attachment":
 			return "Attachment";
 	}
@@ -643,24 +674,47 @@ export function buildPageModal(pageSlot: number, page: ApplicationPage, previous
 		if (!question) return;
 
 		const label = new LabelBuilder().setLabel(question.label.slice(0, 45));
-		if (question.description) {
-			label.setDescription(question.description.slice(0, 100));
-		}
+		const isText = question.type === "short" || question.type === "paragraph";
+		const limit = isText ? textMaxLength(question) : 0;
+		const lengthHint = isText
+			? `${question.minLength ? `Min ${question.minLength} • ` : ""}Max ${limit} characters`
+			: "";
+		const hint = [question.description, lengthHint].filter(Boolean).join(" • ");
+		if (hint) label.setDescription(hint.slice(0, 100));
 
 		const customId = applicationQuestionFieldId(index);
 		const before = previous?.find((answer) => answer.label === question.label)?.answer;
 
 		switch (question.type) {
+			case "short":
 			case "paragraph": {
 				const input = new TextInputBuilder()
 					.setCustomId(customId)
-					.setStyle(TextInputStyle.Paragraph)
-					.setMaxLength(PARAGRAPH_MAX_LENGTH)
+					.setStyle(question.type === "short" ? TextInputStyle.Short : TextInputStyle.Paragraph)
+					.setMaxLength(limit)
 					.setRequired(question.required);
-				if (before) input.setValue(before.slice(0, PARAGRAPH_MAX_LENGTH));
+				if (question.minLength) input.setMinLength(question.minLength);
+				if (before) input.setValue(before.slice(0, limit));
 				label.setComponent(input);
 				break;
 			}
+			case "select":
+				label.setComponent(
+					new ModalStringSelectMenuBuilder()
+						.setCustomId(customId)
+						.setMinValues(question.required ? 1 : 0)
+						.setMaxValues(1)
+						.setRequired(question.required)
+						.addOptions(
+							...question.options.map((option, optionIndex) => ({
+								label: option,
+								value: String(optionIndex),
+								...optionDescription(question, optionIndex),
+								...(before === option ? { default: true } : {}),
+							})),
+						),
+				);
+				break;
 			case "radio":
 				label.setComponent(
 					new RadioBuilder()
