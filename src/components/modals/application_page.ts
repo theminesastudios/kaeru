@@ -48,8 +48,11 @@ function readAnswer(interaction: ModalSubmitInteraction, question: ApplicationQu
 		}
 
 		case "checkbox": {
-			if (question.options.length === 0) {
-				return { label: question.label, answer: interaction.getCheckboxValue(customId) ? "Yes" : "No" };
+			if (question.options.length <= 1) {
+				return {
+					label: question.label,
+					answer: interaction.getCheckboxValue(customId) ? (question.options[0] ?? "Yes") : "No",
+				};
 			}
 
 			const labels = pickOptionLabels(question, interaction.getCheckboxGroupValues(customId));
@@ -116,7 +119,7 @@ function createPageModal(pageSlot: number): InteractionModal {
 				(question, index) =>
 					question?.type === "checkbox" &&
 					question.required &&
-					question.options.length === 0 &&
+					question.options.length <= 1 &&
 					!interaction.getCheckboxValue(applicationQuestionFieldId(index)),
 			);
 
