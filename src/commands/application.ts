@@ -33,6 +33,10 @@ import {
 	getActiveQuestions,
 	getApplicationConfig,
 	getPublishableButtons,
+	MAX_SELECT_OPTIONS,
+	PARAGRAPH_MAX_LENGTH,
+	SHORT_MAX_LENGTH,
+	TEXT_LIMIT,
 	parseButtonEmoji,
 	parseQuestionOptions,
 	saveApplicationConfig,
@@ -42,9 +46,11 @@ import type { ApplicationQuestionType } from "../utils/application.ts";
 // mini-interaction validates choice names with the command-name pattern, so
 // they stay single lowercase words.
 const QUESTION_TYPES: { name: string; value: ApplicationQuestionType }[] = [
+	{ name: "short", value: "short" },
 	{ name: "paragraph", value: "paragraph" },
 	{ name: "checkbox", value: "checkbox" },
 	{ name: "radio", value: "radio" },
+	{ name: "select", value: "select" },
 	{ name: "attachment", value: "attachment" },
 ];
 
@@ -164,7 +170,7 @@ const applicationCommand: InteractionCommand = {
 				.addStringOption((opt) =>
 					opt
 						.setName("type")
-						.setDescription("paragraph = long text, checkbox = pick any, radio = pick one, attachment = file")
+						.setDescription("Answer format: short, paragraph, select, checkbox, radio or attachment")
 						.setRequired(true)
 						.addChoices(...QUESTION_TYPES),
 				)
@@ -184,8 +190,20 @@ const applicationCommand: InteractionCommand = {
 				.addStringOption((opt) =>
 					opt
 						.setName("options")
-						.setDescription("Choices split by , or |. Add a description with >, e.g. Yes > I agree | No > Not yet")
-						.setMaxLength(1000),
+						.setDescription('Choices as {"title": "description"}, e.g. {"Yes": "I agree", "No": "Not yet"}')
+						.setMaxLength(4000),
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("min_length")
+						.setDescription("Minimum characters for short / paragraph answers")
+						.setMaxLength(4),
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("max_length")
+						.setDescription("Maximum characters for short / paragraph answers (default 100 short, 1000 paragraph)")
+						.setMaxLength(4),
 				)
 				.addStringOption((opt) =>
 					opt
@@ -394,7 +412,14 @@ const applicationCommand: InteractionCommand = {
 			const label = interaction.options.getString("question", true)!.trim();
 			const description = interaction.options.getString("description")?.trim() || undefined;
 			const { options, descriptions } = parseQuestionOptions(interaction.options.getString("options"));
-			const hasOptions = type === "radio" || type === "checkbox";
+			const hasOptions = type === "radio" || type === "checkbox" || type === "select";
+			const isText = type === "short" || type === "paragraph";
+			const parseLength = (name: string) => {
+				const raw = interaction.options.getString(name)?.trim();
+				return raw ? Number(raw) : undefined;
+			};
+			const minLength = isText ? parseLength("min_length") : undefined;
+			const maxLength = isText ? parseLength("max_length") : undefined;
 			const required = interaction.options.getString("required") !== "no";
 
 			const config = await getApplicationConfig(guild.id);
@@ -403,6 +428,30 @@ const applicationCommand: InteractionCommand = {
 			if (!config || !button) {
 				return interaction.editReply({
 					content: `${getEmoji("error")} Button **${slot}** does not exist yet. Create it with \`/application button button:${slot}\` first.`,
+				});
+			}
+
+			for (const [name, value] of [["min_length", minLength], ["max_length", maxLength]] as const) {
+				if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > TEXT_LIMIT)) {
+					return interaction.editReply({
+						content: `${getEmoji("error")} \`${name}\` must be a whole number between **0 and ${TEXT_LIMIT}**.`,
+					});
+				}
+			}
+
+			if (maxLength === 0) {
+				return interaction.editReply({ content: `${getEmoji("error")} \`max_length\` must be at least **1**.` });
+			}
+
+			if ((minLength ?? 0) > (maxLength ?? (type === "short" ? SHORT_MAX_LENGTH : PARAGRAPH_MAX_LENGTH))) {
+				return interaction.editReply({
+					content: `${getEmoji("error")} \`min_length\` cannot be larger than the maximum length.`,
+				});
+			}
+
+			if (type === "select" && (options.length < 2 || options.length > MAX_SELECT_OPTIONS)) {
+				return interaction.editReply({
+					content: `${getEmoji("error")} Select questions need between **2 and ${MAX_SELECT_OPTIONS}** options, e.g. \`{"Yes": "I agree", "No": "Not yet"}\`.`,
 				});
 			}
 
@@ -428,6 +477,8 @@ const applicationCommand: InteractionCommand = {
 				options: hasOptions ? options : [],
 				...(hasOptions && descriptions.some(Boolean) ? { optionDescriptions: descriptions } : {}),
 				required,
+				...(minLength ? { minLength } : {}),
+				...(maxLength ? { maxLength } : {}),
 			};
 
 			await saveApplicationConfig(config);

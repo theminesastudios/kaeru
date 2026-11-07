@@ -27,11 +27,20 @@ function readAnswer(interaction: ModalSubmitInteraction, question: ApplicationQu
 	const customId = applicationQuestionFieldId(index);
 
 	switch (question.type) {
+		case "short":
 		case "paragraph":
 			return { label: question.label, answer: interaction.getTextFieldValue(customId)?.trim() ?? "" };
 
 		case "radio": {
 			const value = interaction.getRadioGroupValue(customId);
+			return {
+				label: question.label,
+				answer: value === undefined ? "" : (pickOptionLabels(question, [value])[0] ?? ""),
+			};
+		}
+
+		case "select": {
+			const value = interaction.getSelectMenuValues(customId)?.[0];
 			return {
 				label: question.label,
 				answer: value === undefined ? "" : (pickOptionLabels(question, [value])[0] ?? ""),
