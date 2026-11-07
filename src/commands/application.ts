@@ -34,9 +34,7 @@ import {
 	getApplicationConfig,
 	getPublishableButtons,
 	MAX_SELECT_OPTIONS,
-	PARAGRAPH_MAX_LENGTH,
-	SHORT_MAX_LENGTH,
-	TEXT_LIMIT,
+	TEXT_MAX_LENGTH,
 	parseButtonEmoji,
 	parseQuestionOptions,
 	saveApplicationConfig,
@@ -196,13 +194,7 @@ const applicationCommand: InteractionCommand = {
 				.addStringOption((opt) =>
 					opt
 						.setName("min_length")
-						.setDescription("Minimum characters for short / paragraph answers")
-						.setMaxLength(4),
-				)
-				.addStringOption((opt) =>
-					opt
-						.setName("max_length")
-						.setDescription("Maximum characters for short / paragraph answers (default 100 short, 1000 paragraph)")
+						.setDescription("Minimum characters for short / paragraph answers (maximum is always 500)")
 						.setMaxLength(4),
 				)
 				.addStringOption((opt) =>
@@ -419,7 +411,6 @@ const applicationCommand: InteractionCommand = {
 				return raw ? Number(raw) : undefined;
 			};
 			const minLength = isText ? parseLength("min_length") : undefined;
-			const maxLength = isText ? parseLength("max_length") : undefined;
 			const required = interaction.options.getString("required") !== "no";
 
 			const config = await getApplicationConfig(guild.id);
@@ -431,21 +422,9 @@ const applicationCommand: InteractionCommand = {
 				});
 			}
 
-			for (const [name, value] of [["min_length", minLength], ["max_length", maxLength]] as const) {
-				if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > TEXT_LIMIT)) {
-					return interaction.editReply({
-						content: `${getEmoji("error")} \`${name}\` must be a whole number between **0 and ${TEXT_LIMIT}**.`,
-					});
-				}
-			}
-
-			if (maxLength === 0) {
-				return interaction.editReply({ content: `${getEmoji("error")} \`max_length\` must be at least **1**.` });
-			}
-
-			if ((minLength ?? 0) > (maxLength ?? (type === "short" ? SHORT_MAX_LENGTH : PARAGRAPH_MAX_LENGTH))) {
+			if (minLength !== undefined && (!Number.isInteger(minLength) || minLength < 0 || minLength > TEXT_MAX_LENGTH)) {
 				return interaction.editReply({
-					content: `${getEmoji("error")} \`min_length\` cannot be larger than the maximum length.`,
+					content: `${getEmoji("error")} \`min_length\` must be a whole number between **0 and ${TEXT_MAX_LENGTH}**.`,
 				});
 			}
 
@@ -478,7 +457,6 @@ const applicationCommand: InteractionCommand = {
 				...(hasOptions && descriptions.some(Boolean) ? { optionDescriptions: descriptions } : {}),
 				required,
 				...(minLength ? { minLength } : {}),
-				...(maxLength ? { maxLength } : {}),
 			};
 
 			await saveApplicationConfig(config);

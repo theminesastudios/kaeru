@@ -82,7 +82,6 @@ export type ApplicationQuestion = {
 	optionDescriptions?: string[];
 	required: boolean;
 	minLength?: number;
-	maxLength?: number;
 };
 
 export type ApplicationPage = {
@@ -172,15 +171,9 @@ export type ApplicationHistoryEntry = {
 	submittedAt: number;
 };
 
-export const PARAGRAPH_MAX_LENGTH = 1000;
-export const SHORT_MAX_LENGTH = 100;
-export const TEXT_LIMIT = 4000;
+export const TEXT_MAX_LENGTH = 500;
 export const MAX_CHOICE_OPTIONS = 10;
 export const MAX_SELECT_OPTIONS = 25;
-
-export function textMaxLength(question: ApplicationQuestion) {
-	return question.maxLength ?? (question.type === "short" ? SHORT_MAX_LENGTH : PARAGRAPH_MAX_LENGTH);
-}
 // Components V2 messages share one 4000 character budget across every text
 // display. The review header, footer and decision take part of it, so a page's
 // answers get this much and longer ones move into an attached transcript.
@@ -675,7 +668,7 @@ export function buildPageModal(pageSlot: number, page: ApplicationPage, previous
 
 		const label = new LabelBuilder().setLabel(question.label.slice(0, 45));
 		const isText = question.type === "short" || question.type === "paragraph";
-		const limit = isText ? textMaxLength(question) : 0;
+		const limit = isText ? TEXT_MAX_LENGTH : 0;
 		const lengthHint = isText
 			? `${question.minLength ? `Min ${question.minLength} • ` : ""}Max ${limit} characters`
 			: "";
