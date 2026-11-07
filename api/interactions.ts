@@ -12,6 +12,7 @@ import { getCreateServerAutocompleteChoices } from "../src/utils/createTicketFlo
 import { getActiveTicketAutocompleteChoices } from "../src/utils/ticketControls.js";
 import { getApplicationAutocompleteChoices } from "../src/utils/application.js";
 import { getPunishmentAutocompleteChoices } from "../src/commands/punishment.js";
+import { getDatabase } from "../src/utils/database.js";
 
 type HeaderMap =
 	| Record<string, string | string[] | undefined>
@@ -56,6 +57,18 @@ export const mini = new MiniInteraction({
 });
 
 const nodeHandler = mini.createNodeHandler();
+
+// MiniDatabase connects lazily on its first query. On a cold start that connect
+// used to run inside the first button press, push it past the 2.5s auto-defer
+// window and make `showModal` fail ("interaction failed"). Starting it as soon
+// as the function loads overlaps it with signature checks and module loading.
+try {
+	void getDatabase()
+		.get("__warmup__")
+		.catch(() => null);
+} catch (error) {
+	console.warn("[Database] Warm-up skipped:", error instanceof Error ? error.message : error);
+}
 
 export default async function handler(req: NodeRequest, res: NodeResponse) {
 	const body = await readRawBody(req);
