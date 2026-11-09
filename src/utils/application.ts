@@ -107,6 +107,7 @@ export type ApplicationConfig = {
 	reviewerRoleId: string | null;
 	panelMessageId: string | null;
 	panelMessageChannelId: string | null;
+	unpublished: boolean;
 	buttons: (ApplicationButton | null)[];
 };
 
@@ -312,6 +313,7 @@ export async function getApplicationConfig(guildId: string): Promise<Application
 		reviewerRoleId: asId(raw.reviewerRoleId),
 		panelMessageId: asId(raw.panelMessageId),
 		panelMessageChannelId: asId(raw.panelMessageChannelId),
+		unpublished: raw.unpublished === true,
 		buttons: normalizeButtons(raw.buttons),
 	};
 }
@@ -326,6 +328,7 @@ export function createEmptyApplicationConfig(guildId: string): ApplicationConfig
 		reviewerRoleId: null,
 		panelMessageId: null,
 		panelMessageChannelId: null,
+		unpublished: false,
 		buttons: APPLICATION_SLOTS.map(() => null),
 	};
 }
@@ -601,7 +604,7 @@ function separator() {
 /* Panel                                                               */
 /* ------------------------------------------------------------------ */
 
-export function buildApplicationPanel(config: ApplicationConfig) {
+export function buildApplicationPanel(config: ApplicationConfig, disabled = false) {
 	const buttons = getPublishableButtons(config);
 
 	const container = new ContainerBuilder().addComponent(
@@ -615,7 +618,8 @@ export function buildApplicationPanel(config: ApplicationConfig) {
 			const builder = new ButtonBuilder()
 				.setCustomId(applicationApplyButtonId(slot))
 				.setLabel(button.label.slice(0, 80))
-				.setStyle(ButtonStyle.Secondary);
+				.setStyle(ButtonStyle.Secondary)
+				.setDisabled(disabled);
 			return button.emoji ? builder.setEmoji(button.emoji) : builder;
 		}),
 	);
@@ -955,7 +959,8 @@ export function buildReviewComponents(
 					new ButtonBuilder()
 						.setCustomId(applicationReviewTabId(index + 1))
 						.setLabel(tab.title.slice(0, 80))
-						.setStyle(index === viewPage ? ButtonStyle.Primary : ButtonStyle.Secondary),
+						.setStyle(index === viewPage ? ButtonStyle.Primary : ButtonStyle.Secondary)
+						.setDisabled(index === viewPage),
 				),
 			),
 		);

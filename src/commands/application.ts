@@ -247,6 +247,9 @@ const applicationCommand: InteractionCommand = {
 				.setDescription("Send the application panel, or refresh the one already sent"),
 		)
 		.addSubcommand((sub) =>
+			sub.setName("unpublish").setDescription("Disable the buttons on the published application panel"),
+		)
+		.addSubcommand((sub) =>
 			sub.setName("reset").setDescription("Delete the whole application setup"),
 		),
 
@@ -628,6 +631,11 @@ const applicationCommand: InteractionCommand = {
 			const payload = buildApplicationPanel(config);
 			const token = process.env.DISCORD_BOT_TOKEN!;
 
+			if (config.unpublished) {
+				config.unpublished = false;
+				await saveApplicationConfig(config);
+			}
+
 			// Refresh the existing panel in place when it is still in the
 			// configured channel, so links and pins to it keep working.
 			if (config.panelMessageId && config.panelMessageChannelId === config.panelChannelId) {
@@ -670,6 +678,44 @@ const applicationCommand: InteractionCommand = {
 					content: `${getEmoji("error")} I could not send the panel. Check that I can view and send messages in <#${config.panelChannelId}>.`,
 				});
 			}
+		}
+
+		if (subcommand === "unpublish") {
+			const config = await getApplicationConfig(guild.id);
+
+			if (!config?.panelMessageId || !config.panelMessageChannelId) {
+				return interaction.editReply({
+					content: `${getEmoji("error")} There is no published application panel.`,
+				});
+			}
+
+			if (config.unpublished) {
+				return interaction.editReply({
+					content: `${getEmoji("error")} The application panel is already unpublished.`,
+				});
+			}
+
+			config.unpublished = true;
+			await saveApplicationConfig(config);
+
+			try {
+				await fetchDiscord(
+					`/channels/${config.panelMessageChannelId}/messages/${config.panelMessageId}`,
+					process.env.DISCORD_BOT_TOKEN!,
+					true,
+					"PATCH",
+					buildApplicationPanel(config, true),
+				);
+			} catch (error) {
+				console.error("[application] Failed to disable panel:", error);
+				return interaction.editReply({
+					content: `${getEmoji("seal")} Applications are closed, but I could not update the panel message in <#${config.panelMessageChannelId}>.`,
+				});
+			}
+
+			return interaction.editReply({
+				content: `${getEmoji("seal")} Unpublished the application panel. Run \`/application publish\` to open it again.`,
+			});
 		}
 
 		if (subcommand === "reset") {

@@ -48,7 +48,7 @@ function createApplyButton(slot: number): InteractionComponent {
 
 			const button = config?.buttons[slot - 1];
 
-			if (!config?.reviewChannelId || !button || getActivePages(button).length === 0) {
+			if (!config?.reviewChannelId || config.unpublished || !button || getActivePages(button).length === 0) {
 				return buttonInteraction.editReply({
 					components: buildFormNotice(`${getEmoji("error")} This application is no longer available.`),
 				});
