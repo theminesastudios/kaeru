@@ -148,7 +148,7 @@ const submitButton: InteractionComponent = {
 
 		const button = draft ? config?.buttons[draft.slot - 1] : null;
 
-		if (!config?.reviewChannelId || !draft || !button) {
+		if (!config?.reviewChannelId || config.unpublished || !draft || !button) {
 			return buttonInteraction.editReply({ components: buildFormNotice(EXPIRED_NOTICE) });
 		}
 
