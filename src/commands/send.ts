@@ -56,7 +56,7 @@ const sendCommand: InteractionCommand = {
 		),
 
 	handler: async (interaction: CommandInteraction) => {
-		const { options, guild, channel } = interaction;
+		const { options, channel } = interaction;
 		const user = interaction.user ?? interaction.member?.user;
 
 		if (!user) {

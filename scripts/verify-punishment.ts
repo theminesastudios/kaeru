@@ -129,26 +129,26 @@ for (const subcommand of payload.options) {
 assert.equal(payload.description.length <= 100, true);
 
 // --- 2. Escalation ladder ---------------------------------------------------
-const step = (cases: PunishmentCase[], index: number) =>
+const step = (cases: PunishmentCase[]) =>
 	resolvePunishmentPlan({ record: makeRecord(cases), config, points: config.pointsPerCase });
 
 let cases: PunishmentCase[] = [];
-let plan = step(cases, 1);
+let plan = step(cases);
 assert.equal(plan.action, "timeout", "first case is a timeout");
 assert.equal(plan.durationMs, 60 * 60 * 1000, "first timeout is 1h");
 
 cases = [...cases, makeCase({ action: "timeout", points: plan.scoreAfter - plan.scoreBefore })];
-plan = step(cases, 2);
+plan = step(cases);
 assert.equal(plan.action, "timeout", "second case is still a timeout");
 assert.equal(plan.durationMs, 6 * 60 * 60 * 1000, "second timeout escalates to 6h");
 
 cases = [...cases, makeCase({ action: "timeout", points: plan.scoreAfter - plan.scoreBefore })];
-plan = step(cases, 3);
+plan = step(cases);
 assert.equal(plan.action, "kick", "hitting the kick threshold kicks");
 assert.equal(plan.durationMs, null, "kicks have no timeout duration");
 
 cases = [...cases, makeCase({ action: "kick", points: plan.scoreAfter - plan.scoreBefore })];
-plan = step(cases, 4);
+plan = step(cases);
 assert.equal(plan.action, "ban", "hitting the ban threshold bans");
 assert.equal(plan.scoreAfter, config.banThreshold);
 

@@ -6,7 +6,6 @@ import type {
 } from "@minesa-org/mini-interaction";
 import {
 	PUNISH_MESSAGE_CUSTOM_REASON_MODAL_ID,
-	PUNISH_MESSAGE_CUSTOM_REASON_VALUE,
 	PUNISH_MESSAGE_REASON_SELECT_ID,
 } from "../src/commands/punish-message.ts";
 
