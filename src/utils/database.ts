@@ -101,18 +101,6 @@ export const db: Pick<Database, 'get' | 'set' | 'update' | 'delete' | 'close'> =
 }
 
 /**
- * Gets user data from the database.
- */
-export async function getUserData(userId: string) {
-  try {
-    return await db.get(userId)
-  } catch (error) {
-    console.error('❌ Error getting user data:', error)
-    throw error
-  }
-}
-
-/**
  * Sets user's is_miniapp status.
  * Always true. No gating. Everyone connects.
  */
