@@ -256,7 +256,6 @@ export async function runSetup({
 	guildId,
 	guildName,
 	channelId,
-	moderatorId,
 }: {
 	interaction: SetupInteraction;
 	guildId: string;
