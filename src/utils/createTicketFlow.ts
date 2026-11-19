@@ -3,7 +3,6 @@ import {
 	ButtonBuilder,
 	ButtonStyle,
 	ContainerBuilder,
-	InteractionFlags,
 	LabelBuilder,
 	ModalBuilder,
 	TextDisplayBuilder,
@@ -174,10 +173,4 @@ export function buildAuthorizationContainer(reauthorize: boolean) {
 			),
 		)
 		.addComponent(button);
-}
-
-export async function deferCreateReply(interaction: any) {
-	return interaction.deferReply({
-		flags: InteractionFlags.IsComponentsV2 | InteractionFlags.Ephemeral,
-	});
 }
