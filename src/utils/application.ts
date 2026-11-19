@@ -176,7 +176,6 @@ export type ApplicationHistoryEntry = {
 };
 
 export const TEXT_MAX_LENGTH = 500;
-export const MAX_CHOICE_OPTIONS = 10;
 export const MAX_SELECT_OPTIONS = 25;
 // Components V2 messages share one 4000 character budget across every text
 // display. The review header, footer and decision take part of it, so a page's
