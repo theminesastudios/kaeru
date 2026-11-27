@@ -1,31 +1,17 @@
 import { langMap } from "../utils/languageMap.ts";
+import {
+	isRecord,
+	readCloudflareTextResult,
+	runCloudflareModel,
+} from "./cloudflareAi.ts";
 
-const CLOUDFLARE_API_BASE_URL = "https://api.cloudflare.com/client/v4/accounts";
-const LANGUAGE_DETECTION_MODEL = "@cf/meta/llama-3.2-1b-instruct";
+const LANGUAGE_DETECTION_MODEL = "@cf/google/gemma-4-26b-a4b-it";
 const TRANSLATION_MODEL = "@cf/meta/m2m100-1.2b";
-const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_DETECTION_INPUT_LENGTH = 1_000;
 
 const SUPPORTED_LANGUAGE_NAMES = new Set(
 	Object.values(langMap).map((language) => normalizeLanguageName(language)),
 );
-
-type CloudflareEnvelope<T> = {
-	result?: T;
-	success?: boolean;
-	errors?: Array<{
-		message?: string;
-	}>;
-	messages?: Array<{
-		message?: string;
-	}>;
-};
-
-type LanguageDetectionResult =
-	| string
-	| {
-			response?: string;
-	  };
 
 type TranslationResult =
 	| string
@@ -78,7 +64,7 @@ export async function translateText({
 }
 
 async function detectSourceLanguage(text: string) {
-	const result = await runCloudflareModel<LanguageDetectionResult>(
+	const result = await runCloudflareModel<unknown>(
 		LANGUAGE_DETECTION_MODEL,
 		{
 			messages: [
@@ -94,63 +80,17 @@ async function detectSourceLanguage(text: string) {
 			],
 			max_tokens: 8,
 			temperature: 0,
+			chat_template_kwargs: {
+				enable_thinking: false,
+			},
 		},
 	);
 
-	const rawLanguage = typeof result === "string" ? result : result.response || "";
+	const rawLanguage = readCloudflareTextResult(result);
 	const detectedLanguage = normalizeLanguageName(rawLanguage);
 	return SUPPORTED_LANGUAGE_NAMES.has(detectedLanguage)
 		? detectedLanguage
 		: "english";
-}
-
-async function runCloudflareModel<T>(
-	model: string,
-	input: Record<string, unknown>,
-): Promise<T> {
-	const accountId = requireEnvironmentVariable("CLOUDFLARE_ACCOUNT_ID");
-	const apiToken = requireEnvironmentVariable("CLOUDFLARE_AI_TOKEN");
-	const response = await fetch(
-		`${CLOUDFLARE_API_BASE_URL}/${encodeURIComponent(accountId)}/ai/run/${model}`,
-		{
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${apiToken}`,
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify(input),
-			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-		},
-	);
-
-	const responseBody = await response.text();
-	let payload: CloudflareEnvelope<T> | undefined;
-
-	try {
-		payload = JSON.parse(responseBody) as CloudflareEnvelope<T>;
-	} catch {
-		throw new Error(
-			`Cloudflare returned an invalid JSON response (${response.status})`,
-		);
-	}
-
-	if (!response.ok || payload.success === false) {
-		const errorMessage =
-			payload.errors?.find((error) => error.message)?.message ||
-			payload.messages?.find((message) => message.message)?.message ||
-			response.statusText ||
-			"Unknown Cloudflare error";
-
-		throw new Error(
-			`Cloudflare model request failed (${response.status}): ${errorMessage}`,
-		);
-	}
-
-	if (payload.result === undefined) {
-		throw new Error("Cloudflare model response did not include a result");
-	}
-
-	return payload.result;
 }
 
 function readTranslation(result: TranslationResult) {
@@ -158,10 +98,14 @@ function readTranslation(result: TranslationResult) {
 		return result.trim();
 	}
 
+	if (!isRecord(result)) {
+		return "";
+	}
+
 	return (
-		result.translated_text ||
-		result.translation ||
-		result.response ||
+		(typeof result.translated_text === "string" && result.translated_text) ||
+		(typeof result.translation === "string" && result.translation) ||
+		(typeof result.response === "string" && result.response) ||
 		""
 	).trim();
 }
@@ -172,13 +116,4 @@ function normalizeLanguageName(value: string) {
 		.toLowerCase()
 		.replace(/[^a-z\s-]/gu, "")
 		.replace(/\s+/gu, " ");
-}
-
-function requireEnvironmentVariable(name: string) {
-	const value = process.env[name]?.trim();
-	if (!value) {
-		throw new Error(`Missing ${name}`);
-	}
-
-	return value;
 }

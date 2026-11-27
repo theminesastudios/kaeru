@@ -7,7 +7,7 @@
     "build": "tsx scripts/register.ts",
     "production": "vercel --prod",
     "typecheck": "tsc -b --noEmit",
-    "verify": "tsx scripts/verify-punishment.ts && tsx scripts/verify-modules.ts"
+    "verify": "tsx scripts/verify-punishment.ts && tsx scripts/verify-modules.ts && tsx scripts/verify-cloudflare-ai.ts"
   },
   "keywords": [
     "discord",

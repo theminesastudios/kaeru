@@ -953,7 +953,6 @@ export async function generatePreparedReasons(rulesText: string): Promise<Prepar
 	const parsed = await generateCloudflareJson<{
 		reasons?: Array<{ title?: unknown; detail?: unknown }>;
 	}>({
-		model: "@cf/meta/llama-3.1-8b-instruct-fast",
 		maxTokens: 2048,
 		temperature: 0.1,
 		messages: [
